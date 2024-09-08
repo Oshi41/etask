@@ -63,7 +63,7 @@ async function execute_array(arr, ...params) {
 
 /**
  *
- * @param fn {GeneratorFunction} generator func
+ * @param fn {(this: ThisArg) => Generator | AsyncGenerator} generator func
  * @returns {Promise<any>}
  */
 export default function etask(fn) {

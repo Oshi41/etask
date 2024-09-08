@@ -8,6 +8,10 @@
     "generator",
     "async"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Oshi41/etask"
+  },
   "license": "MIT",
   "main": "etask.js",
   "scripts": {
