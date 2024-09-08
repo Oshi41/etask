@@ -1,10 +1,20 @@
 {
-  "name": "${PROJECT_NAME}",
+  "name": "etask",
+  "type": "module",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "author": "oshi41",
+  "description": "Async generator wrapper",
+  "keywords": [
+    "generator",
+    "async"
+  ],
+  "license": "MIT",
+  "main": "etask.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha tests.js"
   },
-  "private": true
+  "devDependencies": {
+    "mocha": "latest",
+    "nyc": "latest"
+  }
 }
