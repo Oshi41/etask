@@ -99,7 +99,7 @@ describe('index', () => {
         const result = await etask(function* () {
             this.finally(() => {
                 const diff = this.stats.end - this.stats.start;
-                de(diff > 20, true);
+                de(diff >= 20, true);
             });
             yield this.sleep(20);
 
