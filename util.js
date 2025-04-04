@@ -5,26 +5,17 @@
  * @returns {AsyncGenerator<*, *, AsyncGenerator<*, *, *>>}
  */
 export async function* to_gen(any) {
-    // delayed execution
-    yield;
-
-    for (let x of [Symbol.asyncIterator, Symbol.iterator]) {
-        if (x in any) {
-            any = any[x]();
-            break;
-        }
-    }
-
     if (typeof any?.next == 'function') {
-        let last;
-        for await (let value of any) {
-            last = yield value;
-        }
-        return last;
+        return yield* any;
     }
-
+    
     if (typeof any?.then == 'function') {
-        return yield await any;
+        return yield* to_gen(await any);
+    }
+    
+    if (typeof any == 'function') {
+        yield;
+        return yield* to_get(any());
     }
 
     return yield any;
