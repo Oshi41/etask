@@ -92,35 +92,112 @@ export function e_listener() {
 }
 
 /**
- * Install functions based on prototype to be executed once and reuse promise
+ * A function that creates a task runner for managing and executing asynchronous functions with concurrency control.
  *
- * @param proto {Object}
- * @param fns {Function}
+ * @param {number} limit - The maximum number of asynchronous functions to execute concurrently.
+ * @returns {{
+ *   enqueue: function(...Function): void,
+ *   dequeue: function(...Function): void,
+ *   next: function(): Promise<number>
+ * }} An object with methods to manage the task queue.
+ *
+ * - `enqueue(...fns)`: Adds one or more functions to the queue. The provided functions must be asynchronous or return a promise.
+ * - `dequeue(...fns)`: Removes one or more functions from the queue if they exist.
+ * - `next()`: Executes up to the specified limit of asynchronous functions concurrently from the queue, removes the completed functions from the queue, and returns the number of executed functions as a promise.
  */
-export function single_execution(proto, ...fns) {
-    for (let fn of fns) {
-        const name = fn?.name || Object.entries(proto).find(arr => arr[1] === fn)?.at(0);
-
-        proto[name] = async function (...args) {
-            this._promises ??= {};
-
-            if (!this._promises[name]) {
-                const p = new Promise((resolve, reject) => {
-                    try {
-                        resolve(fn.apply(this, args));
-                    } catch (e) {
-                        reject(e);
-                    }
-                });
-                p.finally(() => {
-                    if (this._promises[name] === p) {
-                        delete this._promises[name];
-                    }
-                });
-                this._promises[name] = p;
+export const runner = function (limit) {
+    const queue = new Set();
+    /**
+     *
+     * @param fn
+     * @returns {Promise}
+     */
+    this.enqueue = function (fn) {
+        const pwr = Promise.withResolvers();
+        const p = async function () {
+            try {
+                await pwr.resolve(await fn());
+            } catch (e) {
+                await pwr.reject(e);
+            } finally {
+                queue.delete(p);
             }
-
-            return await this._promises[name];
+        };
+        queue.add(p);
+        this.run();
+        return pwr.promise;
+    };
+    this.run = single_promise_fn(async function _run() {
+        let count = queue.size;
+        while (count) {
+            count = await this.next();
         }
+    }.bind(this));
+    this.next = async function () {
+        const promises = Array.from(queue).slice(0, limit).map(async function (fn) {
+            try {
+                await fn();
+            } finally {
+                queue.delete(fn);
+            }
+        });
+        await Promise.all(promises);
+        return promises.length;
     }
+
+    this.run();
+    return this;
+}
+
+/**
+ * A function that enhances an existing function with additional scheduling behavior.
+ * It provides a mechanism to execute the function only when it is in a scheduled state.
+ * When the function is scheduled, it will attempt to execute the provided function `fn`.
+ * If an error occurs during execution, the scheduled state will be reset.
+ *
+ * @param {Function} fn - The function to be enhanced with scheduling behavior.
+ * @returns {Function} An object containing the enhanced function and scheduling controls.
+ */
+export const scheduled_fn = function (fn) {
+    this.schedule = function () {
+        this.scheduled = true;
+    }
+    Object.assign(this, function _scheduled(...args) {
+        if (this.scheduled) {
+            try {
+                return fn.apply(this, ...args);
+            } catch (e) {
+                this.scheduled = false;
+            }
+        }
+    });
+    return this;
+};
+
+/**
+ * Ensures a given function is executed only once at a time, preventing concurrent executions.
+ * Subsequent calls to the function while a previous execution is still pending will share the
+ * result of that execution.
+ *
+ * @param {Function} fn - The function to be wrapped with single execution enforcement.
+ * @returns {Function} A function that enforces single execution for the provided function.
+ */
+export const single_promise_fn = function (fn) {
+    let promise;
+    this.is_running = function () {
+        return !!promise;
+    }
+    Object.assign(this, function _single(...args) {
+        return promise ??= new Promise((resolve, reject) => {
+            try {
+                resolve(fn.apply(this, ...args));
+            } catch (e) {
+                reject(e);
+            } finally {
+                promise = null;
+            }
+        });
+    });
+
+    return this;
 }

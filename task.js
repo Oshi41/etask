@@ -1,4 +1,4 @@
-import {e_listener, single_execution} from './async.js'
+import {e_listener} from './async.js'
 
 async function* run_anything(any) {
     let result;
@@ -20,22 +20,34 @@ async function* run_anything(any) {
 function task(fn, opts) {
     if (!(this instanceof task)) return new task(fn, opts);
 
-    e_listener.prototype.constructor.call(this);
-    single_execution(this, this._run, this._next_it_step, this.emit);
-
+    this.limit = opts?.limit || 16;
     this.children = new Set();
+    e_listener.prototype.constructor.call(this);
+
 
     this.once('start', async start_ev => {
         this.start = Date.now();
         this.end = 0;
         this.gen = run_anything(typeof fn == 'function' ? fn(...start_ev.detail) : fn);
-        const on_next = ev => this._next_it_step(() => this.gen.next(ev.detail));
+        this.scheduled = false;
 
+        const enqueue = async (ev) => {
+
+        };
+        const on_next = async ev => {
+            if (this.scheduled) return {};
+            return await this.on_it_step(ev, 'next');
+        };
+
+        this.on('queue', enqueue);
         this.on('next', on_next);
 
         this.once('reject', ev => this._next_it_step(() => this.gen.throw(ev.detail)));
         this.once('resolve', ev => this._next_it_step(() => this.gen.return(ev.detail)));
-        this.once('finally', () => this.off('next', on_next));
+        this.once('finally', () => {
+            this.off('next', on_next);
+            this.off('queue', enqueue);
+        });
     });
 
     return this;
@@ -91,7 +103,31 @@ task.prototype.resolve = function (v) {
 //#region Iterable
 
 task.prototype.next = async function next(rv) {
-    return this._next_it_step(() => this.gen.next(rv));
+    return await this.emit('next', rv);
+};
+
+task.prototype.on_it_step = async function _next(ev, name) {
+    let step = {done: true};
+    try {
+        step = await this.gen[name](ev.detail);
+    } catch (e) {
+        step = {error: e, done: true};
+    }
+
+    if (step.done && !this.end) {
+        this.end = Date.now();
+
+        try {
+            if (step.error)
+                await this.emit('catch', step.error);
+            else
+                await this.emit('then', step.value);
+        } finally {
+            await this.emit('finally');
+        }
+    }
+
+    return step;
 };
 
 /**
@@ -128,6 +164,11 @@ task.prototype._next_it_step = async function _next_it_step(get_step) {
 
 //#endregion
 
+//#region Scheduled funcs
+
+
+//#endregion
+
 //#region prototype task
 
 /**
@@ -155,7 +196,9 @@ task.prototype.spawn = function spawn(child) {
     if (!(child instanceof task)) child = new task(child);
 
     if (!this.children.add(child)) return;
-    child.once('finally', () => this.children.delete(child));
+    child.once('finally', () => {
+        this.children.delete(child);
+    });
 }
 
 //#endregion
