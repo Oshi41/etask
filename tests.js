@@ -1,4 +1,4 @@
-import etask from "./etask.js";
+import etask from "./etask2.js";
 import {deepEqual as de, fail} from 'node:assert';
 
 describe('index', () => {

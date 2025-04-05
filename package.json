@@ -13,7 +13,7 @@
     "url": "https://github.com/Oshi41/etask"
   },
   "license": "MIT",
-  "main": "etask.js",
+  "main": "etask2.js",
   "scripts": {
     "test": "mocha tests.js"
   },
