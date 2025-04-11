@@ -5,19 +5,28 @@
 export function e_listener() {
     /**
      * listeners list
-     * @type {Map<string, {index: Set, meta: WeakMap}>}
+     * @type {Map<string, {index: Set, meta: Map}>}
      */
     const map = new Map();
 
     const check_access = function (name) {
-        if (!map.has(name)) map.set(name, {index: new Set(), meta: new WeakMap()});
+        if (!map.has(name)) map.set(name, {index: new Set(), meta: new Map()});
         return map.get(name);
     };
+    const order = function (index, meta) {
+        const keys = Array.from(index);
+        return keys.toSorted((a, b) => {
+            const {order: l} = meta.get(a) || {order: 0};
+            const {order: r} = meta.get(b) || {order: 0};
+            return l - r;
+        });
+    };
+
     const addEventListener = function (name, cb, opts) {
         const {meta, index} = check_access(name);
         if (meta.has(cb) && index.has(cb)) return false;
 
-        meta.set(cb, opts);
+        meta.set(cb, opts || {});
         index.add(cb);
         return () => removeEventListener(name, cb);
     };
@@ -27,14 +36,20 @@ export function e_listener() {
         const i = index.delete(cb);
         return m && i;
     };
-    const dispatchEvent = async function (name, detail, cancelable = true) {
+    const dispatchEvent = async (name, detail, cancelable = true) => {
         const ev = new CustomEvent(name, {detail, bubbles: true, cancelable});
-        let {index, meta} = check_access(name);
-        const keys = Array.from(index);
+        return this._handle_evt(ev);
+    }
+
+
+    this._handle_evt = async function (ev) {
+        let {index, meta} = check_access(ev.type);
+        const keys = order(index, meta);
         while (keys.length && !ev.defaultPrevented) {
             const cb = keys.shift();
             const {once} = meta.get(cb);
             await cb(ev);
+
             if (once) {
                 index.delete(cb);
                 meta.delete(cb);
@@ -66,6 +81,26 @@ export function e_listener() {
     };
 
     /**
+     * Subscribe on event with higher priority
+     * @param name
+     * @param callback
+     * @returns {boolean|(function(): *)}
+     */
+    this.before = function (name, callback) {
+        return addEventListener(name, callback, {order: -1});
+    };
+
+    /**
+     * Subscribe on event with lower priority
+     * @param name
+     * @param callback
+     * @returns {boolean|(function(): *)}
+     */
+    this.after = function (name, callback) {
+        return addEventListener(name, callback, {order: 1});
+    };
+
+    /**
      * Subscribe on event once
      *
      * @param name {string} - event name
@@ -88,64 +123,6 @@ export function e_listener() {
         return dispatchEvent(name, detail, cancelable);
     }
 
-    return this;
-}
-
-/**
- * A function that creates a task runner for managing and executing asynchronous functions with concurrency control.
- *
- * @param {number} limit - The maximum number of asynchronous functions to execute concurrently.
- * @returns {{
- *   enqueue: function(...Function): void,
- *   dequeue: function(...Function): void,
- *   next: function(): Promise<number>
- * }} An object with methods to manage the task queue.
- *
- * - `enqueue(...fns)`: Adds one or more functions to the queue. The provided functions must be asynchronous or return a promise.
- * - `dequeue(...fns)`: Removes one or more functions from the queue if they exist.
- * - `next()`: Executes up to the specified limit of asynchronous functions concurrently from the queue, removes the completed functions from the queue, and returns the number of executed functions as a promise.
- */
-export const runner = function (limit) {
-    const queue = new Set();
-    /**
-     *
-     * @param fn
-     * @returns {Promise}
-     */
-    this.enqueue = function (fn) {
-        const pwr = Promise.withResolvers();
-        const p = async function () {
-            try {
-                await pwr.resolve(await fn());
-            } catch (e) {
-                await pwr.reject(e);
-            } finally {
-                queue.delete(p);
-            }
-        };
-        queue.add(p);
-        this.run();
-        return pwr.promise;
-    };
-    this.run = single_promise_fn(async function _run() {
-        let count = queue.size;
-        while (count) {
-            count = await this.next();
-        }
-    }.bind(this));
-    this.next = async function () {
-        const promises = Array.from(queue).slice(0, limit).map(async function (fn) {
-            try {
-                await fn();
-            } finally {
-                queue.delete(fn);
-            }
-        });
-        await Promise.all(promises);
-        return promises.length;
-    }
-
-    this.run();
     return this;
 }
 
@@ -183,21 +160,24 @@ export const scheduled_fn = function (fn) {
  * @returns {Function} A function that enforces single execution for the provided function.
  */
 export const single_promise_fn = function (fn) {
-    let promise;
-    this.is_running = function () {
-        return !!promise;
-    }
-    Object.assign(this, function _single(...args) {
+    let promise, ac;
+    const result = function _single(...args) {
         return promise ??= new Promise((resolve, reject) => {
+            ac = new AbortController();
             try {
-                resolve(fn.apply(this, ...args));
+                ac.signal.throwIfAborted();
+                resolve(fn(...args));
             } catch (e) {
                 reject(e);
             } finally {
                 promise = null;
             }
         });
-    });
-
-    return this;
+    };
+    result.is_running = function () {
+        return !!promise && !ac.signal.aborted;
+    }
+    result.abort = (r = 'user') => result.is_running && ac.abort(r);
+    result.throwIfAborted = () => ac.signal.throwIfAborted();
+    return result;
 }
