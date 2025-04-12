@@ -1,96 +1,7 @@
-import {duration} from "./duration.js";
-
-function log_factory_config() {
-    this.logs = {
-        batchSize: 20,
-        maxRetries: 3,
-        maxQueue: 100_000,
-        levels: ['trace', 'debug', 'log', 'info', 'warn', 'error'],
-        callback: async (lvl, msg, args) => {
-            console[lvl](msg, ...args);
-            return true;
-        },
-    };
-    this.metrics = {
-        batchSize: 20,
-        maxRetries: 3,
-        maxQueue: 100_000,
-        callback: async (name, func, msg) => {
-            // by default - ignore
-            return true;
-        },
-    };
-    this.timeline = {
-        create: async src => new DefaultTimeline(src),
-    };
-    return this;
-}
-
-function timeline_entry() {
-
-}
-
-class timeline {
-    /**
-     * Marks timeline step with current date
-     *
-     * @param name
-     */
-    mark(name) {
-
-    }
-
-    /**
-     * Starting recording timeline step
-     *
-     * @param name
-     * @returns {(function())|*}
-     */
-    record(name) {
-        return () => {
-            // todo implement record stop
-        }
-    }
-
-    /**
-     * Total timeline execution time
-     *
-     * @returns {duration}
-     */
-    total() {
-        return new duration(this.end - this.start);
-    }
-
-    /**
-     * Merge multiple timelines into a single one
-     *
-     * @param timelines {timeline}
-     * @return {timeline}
-     */
-    merge(...timelines) {
-
-    }
-
-    /**
-     * Pretty print to JSON
-     * (can be usable for metrics)
-     */
-    toJSON() {
-        // todo implement
-    }
-
-    /**
-     * @returns {{} []}
-     */
-    toArray() {
-
-    }
-}
-
 /**
  * Factory for creating logging and monitoring components with async queue system
  */
-export class log_factory {
+export class log_entry_factory {
     // Default implementations
     static #defaultConfig = {
         // Default logging implementation uses console
@@ -132,8 +43,8 @@ export class log_factory {
     };
 
     // Current configuration (initialized with defaults)
-    static #config = {...log_factory.#defaultConfig};
-
+    static #config = {...log_entry_factory.#defaultConfig};
+    
     // Queue for metrics
     static #metricsQueue = [];
 
@@ -148,8 +59,8 @@ export class log_factory {
     static #batchSize = 20;
 
     // Maximum queue size (to prevent memory issues)
-    static #maxQueueSize = 100_000;
-
+    static #maxQueueSize = 10000;
+    
     // Flush promises
     static #metricsFlushedResolvers = [];
     static #logsFlushedResolvers = [];
@@ -165,32 +76,32 @@ export class log_factory {
      */
     static configure(options = {}) {
         if (options.logger) {
-            log_factory.#config.logger = {
-                ...log_factory.#config.logger,
+            log_entry_factory.#config.logger = {
+                ...log_entry_factory.#config.logger,
                 ...options.logger
             };
         }
 
         if (options.metrics) {
-            log_factory.#config.metrics = {
-                ...log_factory.#config.metrics,
+            log_entry_factory.#config.metrics = {
+                ...log_entry_factory.#config.metrics,
                 ...options.metrics
             };
         }
 
         if (options.timelineFactory) {
-            log_factory.#config.timelineFactory = {
-                ...log_factory.#config.timelineFactory,
+            log_entry_factory.#config.timelineFactory = {
+                ...log_entry_factory.#config.timelineFactory,
                 ...options.timelineFactory
             };
         }
 
         if (options.batchSize) {
-            log_factory.#batchSize = options.batchSize;
+            log_entry_factory.#batchSize = options.batchSize;
         }
 
         if (options.maxQueueSize) {
-            log_factory.#maxQueueSize = options.maxQueueSize;
+            log_entry_factory.#maxQueueSize = options.maxQueueSize;
         }
     }
 
@@ -198,13 +109,13 @@ export class log_factory {
      * Reset the factory to default implementations
      */
     static resetToDefaults() {
-        log_factory.#config = {...log_factory.#defaultConfig};
-        log_factory.#metricsQueue = [];
-        log_factory.#logsQueue = [];
-        log_factory.#isProcessingMetrics = false;
-        log_factory.#isProcessingLogs = false;
-        log_factory.#metricsFlushedResolvers = [];
-        log_factory.#logsFlushedResolvers = [];
+        log_entry_factory.#config = {...log_entry_factory.#defaultConfig};
+        log_entry_factory.#metricsQueue = [];
+        log_entry_factory.#logsQueue = [];
+        log_entry_factory.#isProcessingMetrics = false;
+        log_entry_factory.#isProcessingLogs = false;
+        log_entry_factory.#metricsFlushedResolvers = [];
+        log_entry_factory.#logsFlushedResolvers = [];
     }
 
     /**
@@ -215,23 +126,23 @@ export class log_factory {
     static createLogger(context) {
         return {
             debug: (msg, ...args) => {
-                return log_factory.#enqueueLog('debug', context, msg, args);
+                return log_entry_factory.#enqueueLog('debug', context, msg, args);
             },
 
             info: (msg, ...args) => {
-                return log_factory.#enqueueLog('info', context, msg, args);
+                return log_entry_factory.#enqueueLog('info', context, msg, args);
             },
 
             warn: (msg, ...args) => {
-                return log_factory.#enqueueLog('warn', context, msg, args);
+                return log_entry_factory.#enqueueLog('warn', context, msg, args);
             },
 
             error: (msg, ...args) => {
-                return log_factory.#enqueueLog('error', context, msg, args);
+                return log_entry_factory.#enqueueLog('error', context, msg, args);
             },
 
             critical: (msg, ...args) => {
-                return log_factory.#enqueueLog('critical', context, msg, args);
+                return log_entry_factory.#enqueueLog('critical', context, msg, args);
             }
         };
     }
@@ -247,13 +158,13 @@ export class log_factory {
      */
     static #enqueueLog(level, context, message, args) {
         // Check if we're at max queue size and either drop or process
-        if (log_factory.#logsQueue.length >= log_factory.#maxQueueSize) {
+        if (log_entry_factory.#logsQueue.length >= log_entry_factory.#maxQueueSize) {
             // In a real implementation, you might want to drop older logs or emit a warning
-            log_factory.#logsQueue.shift(); // Remove oldest log
+            log_entry_factory.#logsQueue.shift(); // Remove oldest log
         }
 
         // Add to queue
-        log_factory.#logsQueue.push({
+        log_entry_factory.#logsQueue.push({
             level,
             context,
             message,
@@ -262,8 +173,8 @@ export class log_factory {
         });
 
         // Ensure processing is started
-        if (!log_factory.#isProcessingLogs) {
-            log_factory.#processLogsQueue();
+        if (!log_entry_factory.#isProcessingLogs) {
+            log_entry_factory.#processLogsQueue();
         }
 
         return {}; // Return immediately to not block caller
@@ -278,13 +189,13 @@ export class log_factory {
      */
     static postMetric(name, value, tags = {}) {
         // Check if we're at max queue size
-        if (log_factory.#metricsQueue.length >= log_factory.#maxQueueSize) {
+        if (log_entry_factory.#metricsQueue.length >= log_entry_factory.#maxQueueSize) {
             // Remove oldest metric
-            log_factory.#metricsQueue.shift();
+            log_entry_factory.#metricsQueue.shift();
         }
 
         // Add to queue
-        log_factory.#metricsQueue.push({
+        log_entry_factory.#metricsQueue.push({
             name,
             value,
             tags,
@@ -293,8 +204,8 @@ export class log_factory {
         });
 
         // Ensure processing is started
-        if (!log_factory.#isProcessingMetrics) {
-            log_factory.#processMetricsQueue();
+        if (!log_entry_factory.#isProcessingMetrics) {
+            log_entry_factory.#processMetricsQueue();
         }
 
         return true; // Always return true as actual processing is async
@@ -310,7 +221,7 @@ export class log_factory {
             throw new Error('etaskInstance is required for timeline creation');
         }
 
-        return log_factory.#config.timelineFactory.create(etaskInstance);
+        return log_entry_factory.#config.timelineFactory.create(etaskInstance);
     }
 
     /**
@@ -318,22 +229,22 @@ export class log_factory {
      * @private
      */
     static async #processMetricsQueue() {
-        if (log_factory.#isProcessingMetrics) {
+        if (log_entry_factory.#isProcessingMetrics) {
             return; // Already processing
         }
 
-        log_factory.#isProcessingMetrics = true;
-
+        log_entry_factory.#isProcessingMetrics = true;
+        
         try {
-            while (log_factory.#metricsQueue.length > 0) {
+            while (log_entry_factory.#metricsQueue.length > 0) {
                 // Take a batch of metrics to process
-                const batch = log_factory.#metricsQueue.splice(0, log_factory.#batchSize);
+                const batch = log_entry_factory.#metricsQueue.splice(0, log_entry_factory.#batchSize);
                 const failedMetrics = [];
 
                 // Process each metric in the batch
                 await Promise.all(batch.map(async (metric) => {
                     try {
-                        const success = await log_factory.#config.metrics.post(
+                        const success = await log_entry_factory.#config.metrics.post(
                             metric.name,
                             metric.value,
                             metric.tags
@@ -357,18 +268,18 @@ export class log_factory {
 
                 // Re-queue failed metrics
                 if (failedMetrics.length > 0) {
-                    log_factory.#metricsQueue.unshift(...failedMetrics);
+                    log_entry_factory.#metricsQueue.unshift(...failedMetrics);
                 }
 
                 // Small delay to prevent CPU hogging
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
         } finally {
-            log_factory.#isProcessingMetrics = false;
-
+            log_entry_factory.#isProcessingMetrics = false;
+            
             // Resolve any pending flush promises
-            const resolvers = log_factory.#metricsFlushedResolvers;
-            log_factory.#metricsFlushedResolvers = [];
+            const resolvers = log_entry_factory.#metricsFlushedResolvers;
+            log_entry_factory.#metricsFlushedResolvers = [];
             resolvers.forEach(resolve => resolve());
         }
     }
@@ -378,16 +289,16 @@ export class log_factory {
      * @private
      */
     static async #processLogsQueue() {
-        if (log_factory.#isProcessingLogs) {
+        if (log_entry_factory.#isProcessingLogs) {
             return; // Already processing
         }
 
-        log_factory.#isProcessingLogs = true;
-
+        log_entry_factory.#isProcessingLogs = true;
+        
         try {
-            while (log_factory.#logsQueue.length > 0) {
+            while (log_entry_factory.#logsQueue.length > 0) {
                 // Take a batch of logs to process
-                const batch = log_factory.#logsQueue.splice(0, log_factory.#batchSize);
+                const batch = log_entry_factory.#logsQueue.splice(0, log_entry_factory.#batchSize);
                 const failedLogs = [];
 
                 // Process each log in the batch
@@ -397,8 +308,8 @@ export class log_factory {
                         const formattedMsg = `[${log.context}] ${log.message}`;
 
                         // Call the appropriate logger method
-                        const result = log_factory.#config.logger[log.level](formattedMsg, ...log.args);
-
+                        const result = log_entry_factory.#config.logger[log.level](formattedMsg, ...log.args);
+                        
                         // If logging failed, re-queue
                         if (result && result.failed) {
                             log.retryCount = (log.retryCount || 0) + 1;
@@ -417,18 +328,18 @@ export class log_factory {
 
                 // Re-queue failed logs
                 if (failedLogs.length > 0) {
-                    log_factory.#logsQueue.unshift(...failedLogs);
+                    log_entry_factory.#logsQueue.unshift(...failedLogs);
                 }
 
                 // Small delay to prevent CPU hogging
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
         } finally {
-            log_factory.#isProcessingLogs = false;
-
+            log_entry_factory.#isProcessingLogs = false;
+            
             // Resolve any pending flush promises
-            const resolvers = log_factory.#logsFlushedResolvers;
-            log_factory.#logsFlushedResolvers = [];
+            const resolvers = log_entry_factory.#logsFlushedResolvers;
+            log_entry_factory.#logsFlushedResolvers = [];
             resolvers.forEach(resolve => resolve());
         }
     }
@@ -444,21 +355,21 @@ export class log_factory {
     static async flush({logs = true, metrics = true, timeout = 30000} = {}) {
         const promises = [];
 
-        if (logs && log_factory.#logsQueue.length > 0) {
+        if (logs && log_entry_factory.#logsQueue.length > 0) {
             const logsPromise = new Promise(resolve => {
-                log_factory.#logsFlushedResolvers.push(resolve);
-                if (!log_factory.#isProcessingLogs) {
-                    log_factory.#processLogsQueue();
+                log_entry_factory.#logsFlushedResolvers.push(resolve);
+                if (!log_entry_factory.#isProcessingLogs) {
+                    log_entry_factory.#processLogsQueue();
                 }
             });
             promises.push(logsPromise);
         }
 
-        if (metrics && log_factory.#metricsQueue.length > 0) {
+        if (metrics && log_entry_factory.#metricsQueue.length > 0) {
             const metricsPromise = new Promise(resolve => {
-                log_factory.#metricsFlushedResolvers.push(resolve);
-                if (!log_factory.#isProcessingMetrics) {
-                    log_factory.#processMetricsQueue();
+                log_entry_factory.#metricsFlushedResolvers.push(resolve);
+                if (!log_entry_factory.#isProcessingMetrics) {
+                    log_entry_factory.#processMetricsQueue();
                 }
             });
             promises.push(metricsPromise);
@@ -489,14 +400,14 @@ export class log_factory {
     static getQueueStats() {
         return {
             metrics: {
-                queueSize: log_factory.#metricsQueue.length,
-                isProcessing: log_factory.#isProcessingMetrics,
-                oldestEntry: log_factory.#metricsQueue[0]?.timestamp || null
+                queueSize: log_entry_factory.#metricsQueue.length,
+                isProcessing: log_entry_factory.#isProcessingMetrics,
+                oldestEntry: log_entry_factory.#metricsQueue[0]?.timestamp || null
             },
             logs: {
-                queueSize: log_factory.#logsQueue.length,
-                isProcessing: log_factory.#isProcessingLogs,
-                oldestEntry: log_factory.#logsQueue[0]?.timestamp || null
+                queueSize: log_entry_factory.#logsQueue.length,
+                isProcessing: log_entry_factory.#isProcessingLogs,
+                oldestEntry: log_entry_factory.#logsQueue[0]?.timestamp || null
             }
         };
     }
@@ -576,9 +487,9 @@ class DefaultTimeline {
         }
 
         this.#measures.push({name, duration, measureName, startMark, endMark});
-
+        
         // Post the measurement as a metric (non-blocking)
-        log_factory.postMetric(`timeline.${measureName}`, duration, {
+        log_entry_factory.postMetric(`timeline.${measureName}`, duration, {
             task: this.#etaskInstance.name || 'unnamed',
             start: startMark,
             end: endMark

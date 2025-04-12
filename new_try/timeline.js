@@ -1,75 +1,93 @@
-import {duration} from "./duration.js";
+import {date_time} from './date/date_time.js';
+import {date_part} from "./date/part.js";
 
-const perf_api = {
-    now: () => performance.now(),
-    mark: (label, start) => performance.mark(label, {startTime: start}),
+class timeline_api {
+    track(label, ts) {
+    }
+
+    measure_labels(name, start_label, end_label) {
+
+    }
+
+    measure_event(name, {start, end}) {
+    }
 }
-let api = {...perf_api};
-export const timeline_factory = {
-    get_api: () => api,
-    set_api: user_api => api = {...user_api},
-    use_defaults: function () {
-        return this.set_api(perf_api)
-    },
-    create: owner => new timeline(owner),
-};
 
-class timeline {
-    #owner;
-    /*** @type {{label, ts}[]}*/
-    #events = [];
-    #api = {};
+function timeline(owner) {
+    if (!(this instanceof timeline)) return new timeline(owner);
 
-    constructor(owner) {
-        this.#owner = new WeakRef(owner);
+    owner = new WeakRef(owner);
+    this.times = [];
 
-        this.#api.now = () => timeline_factory.get_api().now.apply(this, []);
-        this.#api.mark = (label, start) => timeline_factory.get_api().mark.apply(this, [label, start]);
-    }
+    Object.defineProperty(this, 'owner', {
+        get() {
+            return owner.deref()?.name;
+        }
+    });
 
-    // getters
-    get owner() {
-        return this.#owner.deref();
-    }
+    /**
+     * Mark label on timeline.
+     */
+    this.track = function (label, ts = 0) {
+        ts ??= new date_time().high_res_mls;
+        this.times.push({label, ts});
+        tl.api.track(label, ts);
+        return this;
+    };
 
-    get start() {
-        return Math.min(...this.#events.map(e => e.ts));
-    }
+    /**
+     * Measure duration between labels. They must exist already!
+     * @param name - meassure metric name
+     * @param start_label
+     * @param end_label
+     */
+    this.measure_labels = function (name, start_label, end_label) {
+        const start = this.times.find(x => x.label === start_label)?.ts;
+        const end = this.times.find(x => x.label === end_label)?.ts;
 
-    get end() {
-        return Math.max(...this.#events.map(e => e.ts));
-    }
+        if (!start) throw new Error(`Label ${start_label} not found`);
+        if (!end) throw new Error(`Label ${end_label} not found`);
 
-    // api
-    mark(label) {
-        const now = this.#api.now();
-        this.#events.push({
-            label,
-            ts: now,
-        });
-        this.#api.mark(label, now);
+        const duration = new date_part(end - start);
+
+        this.times.push({label: name, start, end, duration});
+
+        tl.api.measure_labels(name, start_label, end_label);
+        return this;
+    };
+
+    /**
+     * Measure event with duration provided by user.
+     */
+    this.measure_event = function (name, {start, end}) {
+        const ev = {start, end, duration: new date_part(end - start)};
+        this.times.push({label: name, ...ev});
+        tl.api.measure_event(name, ev);
         return this;
     }
 
-    total() {
-        return new duration(this.end - this.start);
-    }
-
-    [Symbol.iterator]() {
-        return this.#events
-            .toSorted((a, b) => a?.ts - b?.ts)
-            [Symbol.iterator]();
-    }
-
-    toJSON() {
-        return {
-            owner: this.owner?.name,
-            duration: this.total().toTimeString(),
-            items: Array.from(this),
-        };
-    }
+    this.track('start');
+    return this;
 }
 
+let api = new timeline_api();
 
+export const tl = {
+    /**
+     *
+     * @returns {timeline_api}
+     */
+    get api() {
+        return api;
+    },
 
+    /**
+     *
+     * @param value {timeline_api}
+     */
+    set api(value) {
+        api = value;
+    },
 
+    timeline: o => timeline(o),
+};
