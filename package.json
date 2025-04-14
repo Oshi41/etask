@@ -12,13 +12,14 @@
     "type": "git",
     "url": "https://github.com/Oshi41/etask"
   },
+  "types": "./types/index.d.ts",
   "license": "MIT",
-  "main": "etask2.js",
   "scripts": {
     "test": "mocha tests.js"
   },
   "devDependencies": {
     "mocha": "latest",
-    "nyc": "latest"
+    "nyc": "latest",
+    "typescript": "latest"
   }
 }

@@ -1,7 +1,7 @@
 import {date_time} from "./date/date_time.js";
 import {working_queue} from "./utils/working_queue.js";
 
-function log_evt(lvl, timestamp, ...messages) {
+export function log_evt(lvl, timestamp, ...messages) {
     if (!(this instanceof log_evt)) return new log_evt(lvl, timestamp, ...messages);
 
     this.lvl = lvl;

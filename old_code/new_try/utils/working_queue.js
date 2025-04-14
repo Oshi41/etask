@@ -1,5 +1,7 @@
 import {units} from "../date/part.js";
 
+// todo implement flushing method
+
 /**
  * @template {Object} T item type
  */
