@@ -1,4 +1,5 @@
 import {queue} from './queue.mjs';
+import {get_stack} from './err.mjs';
 
 
 export class LogItem extends queue {
@@ -17,9 +18,9 @@ export class LogItem extends queue {
         
         this.use_console = use_setting('console', true);
         this.log_levels = use_setting('levels', 'any');
-        this.add_date = use_setting('add_date', true);
-        this.file = use_setting('fileName', true);
-        this.add_caller = use_setting('add_caller', false);
+        this.log_date = use_setting('log_date', true);
+        const fileCaller = opts.fileName || get_stack({limit: 2, getFileName: true})[1]?.FileName;
+        
         
         const self = this;
         
@@ -35,6 +36,17 @@ export class LogItem extends queue {
                     messages: messages,
                 });
             };
+        }
+    }
+    
+    #log_event(level, ...messages) {
+        const item = {level, messages};
+        if (await this.#can_process_item(item)) {
+            if (this.log_date) {
+                item.messages.unshift(new Date());
+            }
+            
+            if (this.log_column
         }
     }
     
