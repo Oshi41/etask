@@ -41,7 +41,7 @@ export class Queue {
 
         this.#queue.push(item);
 
-        this.#process_queue().finally(() => this.#processing = false);
+        this.#process_queue();
     }
 
     /**
@@ -71,6 +71,8 @@ export class Queue {
         for (let i = 0; i <= this.#max_retries; i++) {
             var ac = new AbortController();
             timer = setTimeout(()=> ac.abort('timeout'), this.#timeout);
+            if (i > 0) 
+                console.log(i, 'retry for item', item);
             
             try {
                 await this._process_item(item, ac.signal);
