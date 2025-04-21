@@ -1,52 +1,101 @@
+import {runner} from './util.mjs';
 
-function get_prop_name(str) {
-    for (let prefix of ['get', 'to']) {
-        if (str.startsWith(prefix))
-            str = str.substring(prefix.length);
+const writers = runner(function () {
+    const map = new Map();
+    const {prepareStackTrace: p, stackTraceLimit: l} = Error;
+
+    this.finally(() => Error.prepareStackTrace = p);
+    if (l > 0) {
+        this.finally(() => Error.stackTraceLimit = l);
+        Error.stackTraceLimit = 1;
     }
-    
-    return str;
-}
-const old = Error.prepareStackTrace;
-Error.prepareStackTrace = (err, callsites) => {
-    if (err.prepareStackTrace) {
-        const opts = err.prepareStackTrace;
-        
-        if (Number.isInteger(opts.limit) && opts.limit > 0)
-            callsites = callsites.slice(0, opts.limit);
-            
-        for (let i = 0, i < callsites.length; i++) {
-            const info = {};
-            for (let key of Object.keys(opts).filter(x => opts[x] && x in callsites[i])) {
-                info[get_prop_name(key)] = callsites[i][fn]();
+
+    Error.prepareStackTrace = (_, [{constructor: {prototype}}]) => {
+        for (let prop of Object.getOwnPropertyNames(prototype).filter(x => x !== 'constructor')) {
+            const fn = prototype[prop];
+            if (typeof fn == 'function') {
+                map.set(fn.name, function (callsite, info) {
+                    info[fn.name] = fn.call(callsite, []);
+                });
             }
-            callsites[i] = info;
-        }    
-            
-        return callsites;
-    }
-    
-    if (old) return old(err, callsites);
-    
-    return err.stack;
-};
+        }
+    };
 
+    new Error().stack;
 
-export function detailed_stack_trace(opts = {toString: true}) {
-    const prev =  opts.limit > 0 && Number.isInteger(opts.limit) && Error.stackTraceLimit > 0
-        ? Error.stackTraceLimit
-        : NaN;
-    if (prev){
+    return map;
+});
+
+const stacktrace = opts => runner(function () {
+    const {prepareStackTrace: p, stackTraceLimit: l} = Error;
+
+    this.finally(() => Error.prepareStackTrace = p);
+    if ([l, opts?.limit].every(x => x > 0 && Number.isInteger(x))) {
+        this.finally(() => Error.stackTraceLimit = l);
         Error.stackTraceLimit = opts.limit;
     }
-    
-    const result = {prepareStackTrace: opts};
-    Error.captureStackTrace(result, detailed_stack_trace);
-    
-    if (prev){
-        Error.stackTraceLimit = prev;
-    }
-    
-    return result.stack;
-}
 
+    const fns = Object.keys(opts)
+        .filter(x => opts[x])
+        .map(x => writers.get(x))
+        .filter(Boolean);
+
+    const stack = [];
+
+    Error.prepareStackTrace = (_, callsites) => {
+        for (let callsite of callsites) {
+            const info = Object.create(null);
+            stack.push(info);
+
+            for (let fn of fns) fn(callsite, info);
+        }
+
+        return stack;
+    };
+
+    new Error().stack;
+
+    return stack;
+});
+
+export function location(skip = 0) {
+    const st = stacktrace({
+        getFileName: true,
+        getEvalOrigin: true,
+        getScriptNameOrSourceURL: true,
+        getTypeName: true,
+        getFunctionName: true,
+        getMethodName: true,
+        getLineNumber: true,
+        getColumnNumber: true,
+        isConstructor: true,
+        isAsync: true,
+
+        limit: 5 + skip,
+    }).at(-1);
+
+    return {
+        file: st.getEvalOrigin || st.getFileName || st.getScriptNameOrSourceURL,
+        function: st.getFunctionName || st.getMethodName,
+        line: st.getLineNumber,
+        column: st.getColumnNumber,
+        class: st.getTypeName,
+        modifiers: {
+            new: st.isConstructor,
+            await: st.isAsync,
+        },
+
+        getFileLocation() {
+            return `${this.file}:${this.line}:${this.column}`;
+        },
+        getFunctionInfo() {
+            return [
+                this.modifiers.new && 'new ',
+                this.modifiers.await && 'await ',
+                this.class ? `${this.class}.` : '',
+                this.function,
+                `:${this.line}:${this.column}`
+            ].filter(Boolean).join('');
+        },
+    };
+}
