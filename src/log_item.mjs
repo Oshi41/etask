@@ -1,73 +1,58 @@
-import {queue} from './queue.mjs';
-import {get_stack} from './err.mjs';
+import {Queue} from './queue.mjs';
+import {location} from './err.mjs';
 
-
-export class LogItem extends queue {
-    get static ALL_LEVELS(){
-        return ['trace', 'debug', 'log', 'warn', 'error', ];
-    }
-    
-    constructor(opts = {}) {
-        super({
-            ...opts,
-             process_item: this.#process_item.bind(this),
-            can_process_item: this.#can_process_item.bind(this),
-        });
-        
-        const use_setting = (name, def_value) => name in opts ? opts[name] : def_value;
-        
-        this.use_console = use_setting('console', true);
-        this.log_levels = use_setting('levels', 'any');
-        this.from_stack = {
-            getFileName: use_setting('log_file', true),
-            getFunctionName: use_setting('log_function_name', true),
-            getLine: use_setting('log_line', true),
-            getColumn: use_setting('log_column', true),            
-            date: use_setting('log_date', true),
-        };
-        this.stat = {
-            file: use_setting('log_file_owner', false)
-                ?
-                : null,
-        };
-        
-        for (let lvl of LogItem.ALL_LEVELS)
-            this[lvl] = (...messages) => this.#log_event(lvl, messages);
-    }
-    
-    #log_event(level, messages) {
-        const item = {level, messages};
-        if (!await this.#can_process_item(item))
-            return;
-        
-        if (this.from_stack.date) {
-            item.messages.unshift(new Date());
+export class LogItem extends Queue {
+    static {
+        for (let lvl of ['trace', 'debug', 'info', 'log', 'warn', 'error']) {
+            this.prototype[lvl] = function (...messages) {
+                this.#log_event(lvl, messages);
+            };
         }
-        
-        if (this.stat.file)
-            item.messages.unshift(this.stat.file);
-        
-        const stack = get_stack({
-            ...this.from_stack,
-            limit: 3
-        }).at(-1);
-        
-        this.enqueue_item(item);
     }
-    
-    #can_process_item(item) {
-        if (this.log_levels == 'any')
-            return true;
-            
-        if (this.log_levels == 'none')
-            return false;
-            
-        return this.log_levels.includes(item.level)
+
+    constructor(opts) {
+        super(Object.assign({
+            levels: 'any',
+            providers: {
+                console: true,
+            },
+            enrich: {
+                date: true,
+                location: 'stack',
+            },
+        }, opts));
     }
-    
-    #process_item(item) {
-        if (this.use_console) {
+
+    async _can_enqueue(item) {
+        if (this.opts.levels == 'any') return true;
+        if (this.opts.levels == 'none') return false;
+
+        return this.opts.levels.includes(item.level);
+    }
+
+    async _process_item(item) {
+        if (this.opts.providers.console) {
             console[item.level](...item.messages);
         }
+
+        return true;
+    }
+
+    async _enrich_item(item) {
+        if (this.opts.enrich.location) {
+            const loc = location(3);
+            item.messages.unshift(loc.getFunctionInfo());
+            item.messages.unshift(loc.getFileLocation());
+        }
+
+        if (this.opts.enrich.date) {
+            item.messages.unshift(new Date());
+        }
+
+        return item;
+    }
+
+    async #log_event(level, messages) {
+        await this.enqueue({level, messages});
     }
 }

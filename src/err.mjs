@@ -1,4 +1,4 @@
-import {runner} from './util.mjs';
+import {async_runner, runner} from './util.mjs';
 
 const writers = runner(function () {
     const map = new Map();
@@ -58,6 +58,37 @@ const stacktrace = opts => runner(function () {
     return stack;
 });
 
+const env = {
+    env: 'Unknown',
+    test: false,
+    worker: false,
+    id: 'unknown',
+};
+
+async_runner(async function () {
+    env.test = typeof describe == 'function'
+        && typeof it == 'function'
+        && typeof before == 'function'
+        && typeof after == 'function';
+    env.worker = typeof self != 'undefined';
+    env.env = typeof Deno != 'undefined' && 'Deno'
+        || typeof Bun != 'undefined' && 'Bun'
+        || typeof process != 'undefined' && 'NodeJS'
+        || typeof window != 'undefined' && 'Browser'
+        || 'Unknown';
+
+    if (typeof process != 'undefined') {
+        const wt = await import('worker_threads');
+        env.id = wt.isMainThread ? process.pid : wt.threadId;
+    } else {
+        env.id = typeof window != 'undefined' && window.name
+            || typeof self != 'undefined' && self.name
+            || typeof global != 'undefined' && global.name
+            || typeof globalSelf != 'undefined' && globalSelf.name
+            || 'unknown';
+    }
+});
+
 export function location(skip = 0) {
     const st = stacktrace({
         getFileName: true,
@@ -84,7 +115,7 @@ export function location(skip = 0) {
             new: st.isConstructor,
             await: st.isAsync,
         },
-
+        env: {...env},
         getFileLocation() {
             return `${this.file}:${this.line}:${this.column}`;
         },

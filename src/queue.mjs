@@ -1,28 +1,54 @@
 export class Queue {
     #processing = false;
     #queue = [];
+    #opts = {
+        timeout: 1000 * 60,
+        retries: 3,
+        batch_size: 20,
+        queue_size: 100_000,
+    };
 
-    #max_size;
-    #batch_size;
-    #max_retries;
-    #timeout;
+    constructor(opts) {
+        Object.defineProperties(this, {
+            opts: {
+                get: () => this.#opts,
+                set: (v) => {
+                    Object.assign(this.#opts, v);
+                },
+            },
+            processing: {
+                writable: false,
+                get: () => this.#processing,
+            },
+        });
 
-    constructor({
-                    can_enqueue = async (x) => true,
-                    process_item = async (x) => true,
-                    max_size = 100_000,
-                    batch_size = 20,
-                    max_retries = 3,
-                    timeout_mls = 60*1000,
-                } = {}) {
-        this.#max_size = max_size;
-        this.#batch_size = batch_size;
-        this.#max_retries = max_retries;
-        this.#timeout = timeout_mls;
-
-        this._can_enqueue = can_enqueue;
-        this._process_item = process_item;
+        this.opts = opts;
     }
+
+    async _can_enqueue(item) {
+        return true;
+    };
+
+    /**
+     *
+     * @param item
+     * @param signal {AbortSignal}
+     * @returns {Promise<boolean>}
+     * @private
+     */
+    async _process_item(item, signal) {
+        return true;
+    };
+
+    /**
+     *
+     * @param item
+     * @returns {Promise<*>}
+     * @private
+     */
+    async _enrich_item(item) {
+        return item;
+    };
 
     /**
      * Adds an item to the queue. If the queue exceeds the maximum size allowed, the oldest item is removed.
@@ -34,14 +60,16 @@ export class Queue {
     async enqueue(item) {
         if (!await this._can_enqueue(item)) return;
 
-        if (this.#queue.length >= this.#max_size) {
+        item = await this._enrich_item(item) || item;
+
+        if (this.#queue.length >= this.opts.queue_size) {
             const skipped = this.#queue.shift();
-            console.log('skipping item in queue:', skipped);)
+            console.log('skipping item in queue:', skipped);
         }
 
         this.#queue.push(item);
 
-        this.#process_queue();
+        await this.#process_queue();
     }
 
     /**
@@ -55,36 +83,34 @@ export class Queue {
         if (this.#processing) return;
 
         this.#processing = true;
-        const self = this;
 
         while (this.#queue.length) {
-            const to_run = this.#queue.splice(0, this.#batch_size);
+            const to_run = this.#queue.splice(0, this.opts.batch_size);
             const promises = to_run.map(s => this.#process_item(s));
             await Promise.all(promises);
         }
-        
+
         this.#processing = false;
     }
-    
-    #process_item(item) {
+
+    async #process_item(item) {
         let timer;
-        for (let i = 0; i <= this.#max_retries; i++) {
-            var ac = new AbortController();
-            timer = setTimeout(()=> ac.abort('timeout'), this.#timeout);
-            if (i > 0) 
+        for (let i = 0; i <= this.opts.retries; i++) {
+            const ac = new AbortController();
+            timer = setTimeout(() => ac.abort('timeout'), this.opts.timeout);
+            if (i > 0)
                 console.log(i, 'retry for item', item);
-            
+
             try {
                 await this._process_item(item, ac.signal);
                 return true;
-            }
-            catch (e) {
+            } catch (e) {
                 console.log('Error during item processing:', e);
             } finally {
                 clearTimeout(timer);
             }
         }
-        
+
         console.error('max retries reached for item', item);
         return false;
     }
