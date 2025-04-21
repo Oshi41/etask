@@ -1,5 +1,6 @@
 import {queue} from './queue.mjs';
 
+
 export class LogItem extends queue {
     get static ALL_LEVELS(){
         return ['trace', 'debug', 'log', 'warn', 'error', ];
@@ -17,6 +18,7 @@ export class LogItem extends queue {
         this.use_console = use_setting('console', true);
         this.log_levels = use_setting('levels', 'any');
         this.add_date = use_setting('add_date', true);
+        this.file = use_setting('fileName', true);
         this.add_caller = use_setting('add_caller', false);
         
         const self = this;
