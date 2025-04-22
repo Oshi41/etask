@@ -9,20 +9,19 @@ export class Queue {
     };
 
     constructor(opts) {
-        Object.defineProperties(this, {
-            opts: {
-                get: () => this.#opts,
-                set: (v) => {
-                    Object.assign(this.#opts, v);
-                },
-            },
-            processing: {
-                writable: false,
-                get: () => this.#processing,
-            },
-        });
-
         this.opts = opts;
+    }
+
+    get opts() {
+        return this.#opts;
+    }
+
+    set opts(v) {
+        Object.assign(this.#opts, v);
+    }
+
+    get processing() {
+        return this.#processing;
     }
 
     async _can_enqueue(item) {
@@ -80,7 +79,7 @@ export class Queue {
      * @return {Promise<void>} Resolves when all tasks in the queue are successfully processed or appropriate errors are handled.
      */
     async #process_queue() {
-        if (this.#processing) return;
+        if (this.processing) return;
 
         this.#processing = true;
 

@@ -1,3 +1,4 @@
+import './util.mjs';
 import {Queue} from './queue.mjs';
 import {location} from './err.mjs';
 
@@ -17,7 +18,7 @@ export class LogItem extends Queue {
                 console: true,
             },
             enrich: {
-                date: true,
+                date: 'yyyy-MMM-dd HH:mm:ss.SSS',
                 location: 'stack',
             },
         }, opts));
@@ -39,16 +40,19 @@ export class LogItem extends Queue {
     }
 
     async _enrich_item(item) {
-        if (this.opts.enrich.location) {
-            const loc = location(3);
-            item.messages.unshift(loc.getFunctionInfo());
-            item.messages.unshift(loc.getFileLocation());
-        }
+        const enriched = [];
 
         if (this.opts.enrich.date) {
-            item.messages.unshift(new Date());
+            enriched.push(new Date().format(this.opts.enrich.date), '|');
         }
 
+        if (this.opts.enrich.location) {
+            const loc = location(3);
+            enriched.push(loc.rel_file, '|');
+            enriched.push(loc.func_info, '|');
+        }
+
+        item.messages.unshift(...enriched);
         return item;
     }
 

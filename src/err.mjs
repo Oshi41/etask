@@ -63,29 +63,47 @@ const env = {
     test: false,
     worker: false,
     id: 'unknown',
+    app: 'unknown',
+    root: '',
 };
 
-async_runner(async function () {
+await async_runner(async function () {
     env.test = typeof describe == 'function'
         && typeof it == 'function'
         && typeof before == 'function'
         && typeof after == 'function';
-    env.worker = typeof self != 'undefined';
+    env.worker = typeof window == 'undefined' && typeof self != 'undefined';
     env.env = typeof Deno != 'undefined' && 'Deno'
         || typeof Bun != 'undefined' && 'Bun'
         || typeof process != 'undefined' && 'NodeJS'
-        || typeof window != 'undefined' && 'Browser'
+        || (typeof window != 'undefined' || typeof self != 'undefined') && 'Browser'
         || 'Unknown';
+    env.app = typeof navigator != 'undefined' && navigator.userAgent;
 
     if (typeof process != 'undefined') {
         const wt = await import('worker_threads');
         env.id = wt.isMainThread ? process.pid : wt.threadId;
+        let root = process.cwd();
+        const separator = root.includes('\\') ? '\\' : '/';
+        root = root.split(separator);
+        while (root.length) {
+            root.pop();
+            try {
+                await import(['file:', separator, ...root, 'package.json'].join(separator), {with: {type: 'json'}});
+                env.root = ['file:', separator, ...root.slice(0, -1)].join(separator);
+                break;
+            } catch (e) {
+                // ignored
+            }
+        }
     } else {
-        env.id = typeof window != 'undefined' && window.name
-            || typeof self != 'undefined' && self.name
-            || typeof global != 'undefined' && global.name
-            || typeof globalSelf != 'undefined' && globalSelf.name
-            || 'unknown';
+        const _this = typeof window != 'undefined' && window
+            || typeof self != 'undefined' && self
+            || typeof global != 'undefined' && global
+            || typeof globalSelf != 'undefined' && globalSelf;
+
+        env.root = _this?.location?.href && URL.parse(_this.location.href).origin || '';
+        env.id = _this?.name || env.root || 'unknown';
     }
 });
 
@@ -105,7 +123,7 @@ export function location(skip = 0) {
         limit: 5 + skip,
     }).at(-1);
 
-    return {
+    const result = {
         file: st.getEvalOrigin || st.getFileName || st.getScriptNameOrSourceURL,
         function: st.getFunctionName || st.getMethodName,
         line: st.getLineNumber,
@@ -116,17 +134,20 @@ export function location(skip = 0) {
             await: st.isAsync,
         },
         env: {...env},
-        getFileLocation() {
-            return `${this.file}:${this.line}:${this.column}`;
-        },
-        getFunctionInfo() {
-            return [
-                this.modifiers.new && 'new ',
-                this.modifiers.await && 'await ',
-                this.class ? `${this.class}.` : '',
-                this.function,
-                `:${this.line}:${this.column}`
-            ].filter(Boolean).join('');
-        },
     };
+
+    if ([env.root, result.file].every(x => URL.canParse(x))) {
+        const root = URL.parse(env.root).pathname;
+        const file = URL.parse(result.file).pathname;
+        if (file?.startsWith(root))
+            result.rel_file = file.substring(root.length);
+    }
+
+    result.func_info = [
+        result.class ? `${result.class}` : '',
+        result.function,
+        `:${result.line}:${result.column}`
+    ].filter(Boolean).join('');
+
+    return result;
 }
