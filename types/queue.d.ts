@@ -1,3 +1,5 @@
+import {Logger} from './logger';
+
 /**
  * Configuration options for the Queue
  */
@@ -25,6 +27,17 @@ export interface QueueOptions {
      * @default 100000
      */
     queue_size?: number;
+
+    /**
+     * Represents an optional instance of the Logger used for logging activities within an application.
+     * It can provide methods to log messages at various levels such as debug, info, warn, or error.
+     *
+     * The Logger instance can be utilized to track events, issues, or general application output,
+     * aiding in debugging and monitoring.
+     *
+     * @type {Logger|undefined}
+     */
+    logger?: Logger;
 
     /**
      * Additional custom options that may be used by subclasses

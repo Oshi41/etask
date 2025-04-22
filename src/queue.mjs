@@ -1,3 +1,5 @@
+import {Logger} from "./logger.mjs";
+
 export class Queue {
     #processing = false;
     #queue = [];
@@ -6,6 +8,7 @@ export class Queue {
         retries: 3,
         batch_size: 20,
         queue_size: 100_000,
+        logger: new Logger(),
     };
 
     constructor(opts) {
@@ -49,7 +52,7 @@ export class Queue {
     async enqueue(item) {
         if (this.#queue.length >= this.opts.queue_size) {
             const skipped = this.#queue.shift();
-            console.log('skipping item in queue:', skipped);
+            this.opts.logger.info('skipping item in queue:', skipped);
         }
 
         this.#queue.push(item);
@@ -84,19 +87,19 @@ export class Queue {
             const ac = new AbortController();
             timer = setTimeout(() => ac.abort('timeout'), this.opts.timeout);
             if (i > 0)
-                console.log(i, 'retry for item', item);
+                this.opts.logger.log(i, 'retry for item', item);
 
             try {
                 await this._process_item(item, ac.signal);
                 return true;
             } catch (e) {
-                console.log('Error during item processing:', e);
+                this.opts.logger.log('Error during item processing:', e);
             } finally {
                 clearTimeout(timer);
             }
         }
 
-        console.error('max retries reached for item', item);
+        this.opts.logger.error('max retries reached for item', item);
         return false;
     }
 }
