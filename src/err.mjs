@@ -119,19 +119,21 @@ export function location(skip = 0) {
         getColumnNumber: true,
         isConstructor: true,
         isAsync: true,
+        isToplevel: true,
 
         limit: 5 + skip,
     }).at(-1);
 
     const result = {
         file: st.getEvalOrigin || st.getFileName || st.getScriptNameOrSourceURL,
-        function: st.getFunctionName || st.getMethodName,
+        function: st.getFunctionName || st.getMethodName || (st.isToplevel && '<top_func>'),
         line: st.getLineNumber,
         column: st.getColumnNumber,
         class: st.getTypeName,
         modifiers: {
             new: st.isConstructor,
             await: st.isAsync,
+            top: st.isToplevel,
         },
         env: {...env},
     };

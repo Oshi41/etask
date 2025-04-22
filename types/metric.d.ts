@@ -11,54 +11,6 @@
  */
 
 /**
- * Defines logging operations at various severity levels.
- * Each method returns the instance for method chaining.
- */
-interface ILogItem {
-    /**
-     * Log trace-level messages for detailed debugging.
-     * @param messages - Any values to be logged
-     * @returns The current instance for chaining
-     */
-    trace(...messages: any): this;
-
-    /**
-     * Log debug-level messages for development information.
-     * @param messages - Any values to be logged
-     * @returns The current instance for chaining
-     */
-    debug(...messages: any): this;
-
-    /**
-     * Log informational messages for general operational events.
-     * @param messages - Any values to be logged
-     * @returns The current instance for chaining
-     */
-    info(...messages: any): this;
-
-    /**
-     * Log standard messages (equivalent to info in many systems).
-     * @param messages - Any values to be logged
-     * @returns The current instance for chaining
-     */
-    log(...messages: any): this;
-
-    /**
-     * Log warning messages for concerning but non-critical issues.
-     * @param messages - Any values to be logged
-     * @returns The current instance for chaining
-     */
-    warn(...messages: any | Error): this;
-
-    /**
-     * Log error messages for operational failures.
-     * @param messages - Any values to be logged
-     * @returns The current instance for chaining
-     */
-    error(...messages: any | Error): this;
-}
-
-/**
  * Defines timeline measurement operations for performance tracking.
  */
 interface ITimeline {
@@ -130,7 +82,7 @@ interface IMetric {
  * A mark represents a specific point or event in the application's execution
  * that can be used for logging, performance measurement, and metric collection.
  */
-export interface IMark extends ITimeline, IMetric, ILogItem {
+export interface IMark extends ITimeline, IMetric {
     /**
      * A descriptive label for the mark point.
      * Used to identify the mark in logs and reports.

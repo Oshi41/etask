@@ -40,16 +40,6 @@ export class Queue {
     };
 
     /**
-     *
-     * @param item
-     * @returns {Promise<*>}
-     * @private
-     */
-    async _enrich_item(item) {
-        return item;
-    };
-
-    /**
      * Adds an item to the queue. If the queue exceeds the maximum size allowed, the oldest item is removed.
      * The method asynchronously processes the queue after adding a new item.
      *
@@ -57,10 +47,6 @@ export class Queue {
      * @return {Promise<void>} A promise that resolves when the enqueue logic and any queue processing are initiated.
      */
     async enqueue(item) {
-        if (!await this._can_enqueue(item)) return;
-
-        item = await this._enrich_item(item) || item;
-
         if (this.#queue.length >= this.opts.queue_size) {
             const skipped = this.#queue.shift();
             console.log('skipping item in queue:', skipped);
