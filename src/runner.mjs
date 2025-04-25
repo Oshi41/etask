@@ -1,143 +1,142 @@
-import {location} from './err.mjs'
+import {gen_anything, proxy_this, run_anything} from './util.mjs';
 
-function runner(fn) {
-    if (!(this instanceof runner)) return new runner(fn);
+class Runner {
+    constructor(fn, thisArg, ...args) {
+        this.fn = fn;
+        this.args = args;
+        this.state = {then: [], catch: [], finally: [],};
+        this.thisArg = proxy_this(thisArg, this.#create_ctx());
 
-    const marks = [];
-    const measures = [];
+        this.last_value = null;
+        this.done = false;
+        this.running = false;
+        this.children = [];
+        this.generator = this.#generator();
+        this.runner = Promise.withResolvers();
 
-    this._callbacks = {then: [], catch: [], finally: []};
-    this.then = function (reject, resolve) {
-        resolve && this._callbacks.then.push(resolve);
-        reject && this._callbacks.catch.push(reject);
+        this.run();
+    }
+
+    then(resolve, reject) {
+        typeof resolve == 'function' && this.state.then.push(resolve);
+        typeof reject == 'function' && this.state.catch.push(reject);
+
+        if (!this.running) this.run();
+
         return this;
     }
-    this.catch = function (reject) {
-        return this.then(reject);
-    };
-    this.finally = function (cb) {
-        this._callbacks.finally.push(cb);
+
+    catch(reject) {
+        typeof reject == 'function' && this.state.catch.push(reject);
         return this;
-    };
+    }
 
-    const self = this;
+    finally(cb) {
+        typeof cb == 'function' && this.state.finally.push(cb);
+        return this;
+    }
 
-    this.run = function (...args) {
-        const loc = location(1);
-        self._measure_fn = function (fn, name) {
-            const header = 'runner';
-            const start = [header, name, 'start'].join('.');
-            const end = [header, name, 'end'].join('.');
-            const total = [header, name, 'total'].join('.');
-            marks.push(performance.mark(start, {detail: loc}).name);
-            try {
-                return fn();
-            } finally {
-                marks.push(performance.mark(end, {detail: loc}).name);
+    sleep(mls) {
+        const pwr = Promise.withResolvers();
+        const timeout = setTimeout(pwr.resolve, mls);
+        pwr.promise.finally(() => clearTimeout(timeout));
+        return pwr.promise;
+    }
 
-                measures.push(performance.measure(total, start, end).name);
-            }
-        };
-
-        try {
-            const result = self._measure_fn(() => fn.apply(self, ...args), 'fn')
-
-            if (this._callbacks.then.length) {
-                self._measure_fn(() => {
-                    for (let cb of this._callbacks.then) {
-                        cb(result);
-                    }
-                }, 'then');
-            }
-
-            return result;
-        } catch (e) {
-            if (this._callbacks.catch.length) {
-                self._measure_fn(() => {
-                    for (let cb of this._callbacks.catch) {
-                        cb(e);
-                    }
-                }, 'catch');
-            }
-
-        } finally {
-            if (this._callbacks.finally.length) {
-                self._measure_fn(() => {
-                    for (let cb of this._callbacks.finally) {
-                        cb();
-                    }
-                }, 'finally');
-            }
-
-            marks.push(performance.mark('runner.finish.end', {detail: loc}).name);
-            measures.push(performance.measure('runner.total', 'runner.fn.start', 'runner.finish.end').name);
-
-            while (marks.length)
-                performance.clearMarks(marks.shift());
-
-            while (measures.length)
-                performance.clearMeasures(measures.shift());
+    return(arg) {
+        if (this.main_fn) {
+            this.main_fn?.return(arg).then(() => {
+                this.last_value = arg;
+            })
         }
-    };
 
-    this.run_async = async function (...args) {
-        const loc = location(1);
-        self._measure_fn = async function (fn, name) {
-            const header = 'async_runner';
-            const start = [header, name, 'start'].join('.');
-            const end = [header, name, 'end'].join('.');
-            const total = [header, name, 'total'].join('.');
-            marks.push(performance.mark(start, {detail: loc}).name);
-            const result = await fn();
-            marks.push(performance.mark(end, {detail: loc}).name);
-            measures.push(performance.measure(total, start, end).name);
-            return result;
+        this.last_value = arg;
+        return this.last_value;
+    }
+
+    #create_ctx() {
+        return {
+            then: this.then.bind(this),
+            catch: this.catch.bind(this),
+            finally: this.finally.bind(this),
+            sleep: this.sleep.bind(this),
+            return: this.return.bind(this),
         };
+    }
 
+    async* #generator() {
         try {
-            const result = await self._measure_fn(() => fn.apply(self, ...args), 'fn');
+            this.main_fn = gen_anything(this.fn.apply(this.thisArg, ...this.args));
+            const result = yield* this.main_fn;
 
-            if (this._callbacks.then.length) {
-                await self._measure_fn(async () => {
-                    for (let cb of this._callbacks.then) {
-                        await cb(result);
-                    }
-                }, 'then');
+            for (let cb of this.state.then) {
+                await run_anything(() => cb(result));
             }
-
             return result;
         } catch (e) {
-            if (this._callbacks.catch.length) {
-                await self._measure_fn(async () => {
-                    for (let cb of this._callbacks.catch) {
-                        await cb(e);
-                    }
-                }, 'catch');
-            }
+            if (!this.state.catch.length)
+                throw e;
 
+            for (let cb of this.state.catch) {
+                await run_anything(() => cb(e));
+            }
         } finally {
-            if (this._callbacks.finally.length) {
-                await self._measure_fn(async () => {
-                    for (let cb of this._callbacks.finally) {
-                        await cb();
-                    }
-                }, 'finally');
+            for (let cb of this.state.finally) {
+                await run_anything(() => cb());
             }
-
-            marks.push(performance.mark('async_runner.finish.end', {detail: loc}).name);
-            measures.push(performance.measure('async_runner.total', 'async_runner.fn.start', 'async_runner.finish.end').name);
-
-            while (marks.length)
-                performance.clearMarks(marks.shift());
-
-            while (measures.length)
-                performance.clearMeasures(measures.shift());
         }
     }
 
-    return this;
+    async next() {
+        if (this.children.length) {
+            const {done} = await this.children[0].next();
+            if (done) this.children.unshift();
+            return this.last_value;
+        }
+
+        if (!this.done) {
+            const res = await this.generator.next(this.last_value);
+            this.done = res.done;
+            this.last_value = res.value;
+
+            if (this.done)
+                this.runner.resolve(this.last_value);
+        }
+
+        return this.last_value;
+    }
+
+    async run() {
+        if (!this.done && !this.running) {
+            this.running = true;
+
+            while (!this.done)
+                await this.next();
+        }
+
+        return await this.runner.promise;
+    }
 }
 
-runner(function () {
-    console.log('hello');
-}).run();
+new Runner(function* () {
+    this.then(function (v) {
+        console.log('then', v);
+    })
+    this.catch(function (v) {
+        console.error('catch', v);
+    })
+    this.finally(function () {
+        console.log('finally');
+    })
+
+    console.log('Hello world!');
+    this.return('BEFORE');
+    yield 'hello';
+
+
+    console.log('starting awaiting');
+    yield this.sleep(1000);
+    console.log('awaited');
+
+    return 'hello';
+})

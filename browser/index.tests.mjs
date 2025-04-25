@@ -1,16 +1,16 @@
-import {Logger} from '../src/logger.mjs';
+const map = new Map();
 
-const logger = new Logger();
+function run() {
 
-function test(calls = 10) {
-    if (calls) {
-        return test(calls - 1);
-    }
-
-    logger.log('test');
-    logger.info('test');
-    logger.warn('test');
-    logger.error('test');
 }
 
-test()
+map.set(function run() {
+
+}, {});
+map.set(function run() {
+
+}, {a: 1});
+map.set(run, {a: 1});
+map.set(run, {a: 2});
+
+console.log(map);

@@ -12,7 +12,6 @@
     "type": "git",
     "url": "https://github.com/Oshi41/etask"
   },
-  "types": "./types/index.d.ts",
   "license": "MIT",
   "scripts": {
     "test": "mocha tests.js"
