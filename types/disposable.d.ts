@@ -1,4 +1,14 @@
 /**
+ * Creates a disposable object from various input types.
+ * @param resourceOrFunction - A resource with a dispose method, a function to call on disposal, or nothing.
+ * @param clearFunction - A function that will be called with the resource when disposing.
+ * @returns A Disposable object.
+ */
+export function as_disposable<T>(disposable: { dispose(): void } | { [Symbol.dispose](): void }): Disposable;
+export function as_disposable(clearFn: () => void): Disposable;
+export function as_disposable<T>(arg: T, clearFunction: (arg: T) => void): Disposable;
+
+/**
  * Represents a collection of disposable resources that can be disposed of together.
  * Implements the Disposable interface and provides methods to manage a group of disposable objects.
  * This is useful for tracking and cleaning up multiple resources at once in a single operation.
