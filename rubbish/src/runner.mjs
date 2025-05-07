@@ -67,7 +67,7 @@ class Runner {
     async* #generator() {
         try {
             this.main_fn = gen_anything(this.fn.apply(this.thisArg, ...this.args));
-            const result = yield* this.main_fn;
+            const result = await run_anything(this.main_fn);
 
             for (let cb of this.state.then) {
                 await run_anything(() => cb(result));
@@ -130,8 +130,8 @@ new Runner(function* () {
     })
 
     console.log('Hello world!');
-    this.return('BEFORE');
     yield 'hello';
+    yield this.return('BEFORE');
 
 
     console.log('starting awaiting');
