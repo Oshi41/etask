@@ -63,3 +63,39 @@ global.isPrimitive = o => !isRefType(o);
  * @returns {boolean} - True if the object implements the dispose method, false otherwise
  */
 global.isDisposable = o => isFunc(o?.[Symbol.dispose]);
+
+/**
+ * Returns current call location.
+ * @param skip {number}
+ * @returns {{
+ *     file: string,
+ *     class: string,
+ *     function: string,
+ *     file: string,
+ *     line: number,
+ *     column: number,
+ * }}
+ */
+global.stacktrace = function stacktrace(skip = 0) {
+    const prepare = Error.prepareStackTrace;
+    const limit = Error.stackTraceLimit;
+
+    Error.stackTraceLimit = 2 + skip;
+
+    Error.prepareStackTrace = (_, stack) => {
+        return stack.map(x => ({
+            file: x.getEvalOrigin() || x.getFileName() || x.getFunctionName(),
+            class: x.getTypeName(),
+            function: x.getFunctionName() || x.getMethodName() || (x.isToplevel() && '<top_level>'),
+            line: x.getLineNumber(),
+            column: x.getColumnNumber(),
+        }));
+    }
+
+    try {
+        return new Error().stack.at(-1);
+    } finally {
+        Error.prepareStackTrace = prepare;
+        Error.stackTraceLimit = limit;
+    }
+};

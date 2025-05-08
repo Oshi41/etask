@@ -72,4 +72,3 @@ Date.prototype.format = function (format, locale = 'en-US') {
         }
     });
 }
-
