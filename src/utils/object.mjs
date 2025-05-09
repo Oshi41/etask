@@ -202,11 +202,12 @@ Object.forEachRecursive = function (root, {deep = 10, strategy = 'deep'} = {}) {
 
             yield step.ret;
 
-            nextLevel.push(step.children());
+            nextLevel.push(step.children);
         }
 
         if (nextLevel.length) {
-            yield* layerStrategy(nextLevel[Symbol.iterator]().flatMap(x => x));
+            nextLevel[Symbol.iterator]().flatMap(x => x())
+            yield* layerStrategy(nextLevel[Symbol.iterator]().flatMap(x => x()));
         }
     }
 
@@ -219,6 +220,8 @@ Object.forEachRecursive = function (root, {deep = 10, strategy = 'deep'} = {}) {
             return deepStrategy(root);
     }
 }
+
+
 
 for (let {prop, stats} of Object.forEachRecursive(global, {deep: 10, strategy: 'layer'}).take(1000)) {
     console.log(prop, stats);

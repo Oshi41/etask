@@ -10,15 +10,10 @@ export function isGenerator(obj) {
 Generator.prototype.concat = function* (...others) {
     yield* this[Symbol.iterator]();
 
-    for (let gen of others.filter(x => isGenerator(x))) {
-        yield* gen;
+    for (let other of others) {
+        if (other instanceof Generator)
+            yield* other();
+        else if (other?.constructor === Generator)
+            yield* other;
     }
-}
-
-function* gen(end = 50) {
-    for (let i = 0; i < end; i++) {
-        yield i;
-    }
-
-    console.log('end');
 }

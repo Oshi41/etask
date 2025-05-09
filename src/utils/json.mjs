@@ -14,7 +14,7 @@ console.json = JSON.stringify = function (obj, replacer = null, space = 0, avoid
             return value;
         }
 
-        if (isObject(value) && !!key?.length) {
+        if (isPlainObject(value) && !!key?.length) {
             if (seen.has(value))
                 value = `<${value === obj ? 'self' : seen.get(value)}>`;
             else {

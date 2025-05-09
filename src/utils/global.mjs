@@ -48,10 +48,20 @@ global.assign = Object.assign;
  * @param {*} o - The value to check
  * @returns {boolean} - True if the value is a plain object, false otherwise
  */
-global.isObject = o => typeof o === 'object' && o != null && !isFunc(o) && !isArray(o);
+global.isPlainObject = function (o) {
+    return o != null && typeof o === 'object' && !isFunc(o) && !isArray(o);
+}
 
-global.isRefType = o => typeof o === 'object';
-global.isPrimitive = o => !isRefType(o);
+global.isPrimitive = function (o) {
+    switch (typeof o) {
+        case "function":
+        case "object":
+            return false;
+
+        default:
+            return true;
+    }
+}
 
 /**
  * Checks if an object implements the Symbol.dispose method (disposable pattern).
@@ -62,7 +72,15 @@ global.isPrimitive = o => !isRefType(o);
  * @param {*} o - The object to check
  * @returns {boolean} - True if the object implements the dispose method, false otherwise
  */
-global.isDisposable = o => isFunc(o?.[Symbol.dispose]);
+global.isDisposable = function (o) {
+    const prop = Symbol.dispose;
+    return !isPrimitive(o) && prop in o && isFunc(o[prop]);
+}
+
+global.isAsyncDisposable = function (o) {
+    const prop = Symbol.asyncDispose;
+    return !isPrimitive(o) && prop in o && isFunc(o[prop]);
+}
 
 /**
  * Returns current call location.
@@ -76,7 +94,7 @@ global.isDisposable = o => isFunc(o?.[Symbol.dispose]);
  *     column: number,
  * }}
  */
-global.stacktrace = function stacktrace(skip = 0) {
+global.stackLocation = function stackLocation(skip = 0) {
     const prepare = Error.prepareStackTrace;
     const limit = Error.stackTraceLimit;
 
@@ -101,5 +119,5 @@ global.stacktrace = function stacktrace(skip = 0) {
 };
 
 import log from "./log.mjs";
-
 global.log = log
+

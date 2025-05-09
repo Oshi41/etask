@@ -1,6 +1,216 @@
 import './proxy.mjs';
+import './object.mjs';
 
 const wrapSymbol = Symbol('function wrapper');
+const Generator = Object.getPrototypeOf(function* () {
+});
+const AsyncGenerator = Object.getPrototypeOf(async function* () {
+});
+
+class Wrapper {
+    static asAsyncGen(fn) {
+        const proto = Object.getPrototypeOf(fn);
+
+        if (Generator === proto || AsyncGenerator === proto) {
+            return fn;
+        }
+
+
+    }
+
+    #fn;
+    #callbacks = {
+        before: [],
+        after: [],
+        catch: [],
+        finally: [],
+    };
+    #running = false;
+    #mainFunctionGenerator = null;
+
+    /**
+     *
+     * @param fn {Function}
+     */
+    constructor(fn) {
+        this.#fn = fn;
+    }
+
+
+    get [wrapSymbol]() {
+        return true;
+    }
+    get name() {
+        return this.#fn?.name || 'anonymous';
+    }
+    get isRunning() {
+        return this.#running;
+    }
+
+    before(callback) {
+        isFunc(callback) && this.#callbacks.before.push(callback);
+        return this;
+    }
+    than(resolve, reject) {
+        isFunc(resolve) && this.#callbacks.after.push(resolve);
+        isFunc(reject) && this.#callbacks.catch.push(reject);
+        return this;
+    }
+    catch(callback) {
+        isFunc(callback) && this.#callbacks.catch.push(callback);
+        return this.than(null, callback);
+    }
+    finally(callback) {
+        isFunc(callback) && this.#callbacks.finally.push(callback);
+        return this;
+    }
+
+
+
+    async * #apply(thisArg, args) {
+        this.#running = true;
+
+        thisArg = Proxy.this(thisArg, this);
+
+        try {
+            this.#callbacks.before.map(x => x.asAsyncGenerator())
+
+            this.#fn.call(thisArg, ...args);
+        } catch (e) {
+
+        } finally {
+
+        }
+    }
+
+    async sleep(mls = 200) {
+        const pwr = Promise.withResolvers();
+        // Set up a timer to resolve the promise after the specified delay
+        const timer = setTimeout(pwr.resolve, mls);
+        // Ensure the timer is cleared when the promise is settled to prevent memory leaks
+        return await pwr.promise.finally(() => clearTimeout(timer));
+    }
+}
+
+Function.prototype.asAsyncGenerator = function asAsyncGenerator() {
+    const orig = this;
+    const proto = Object.getPrototypeOf(orig);
+    if (Generator === proto || AsyncGenerator === proto) {
+        return orig;
+    }
+
+    return async function* promiseWrapper(...args) {
+        let res = yield orig.call(this, args);
+        res = yield await res;
+        return res;
+    }
+}
+
+Function.wrap = function wrap(fn) {
+    const state = {
+        before: [],
+        after: [],
+        catch: [],
+        finally: [],
+
+        running: false,
+    };
+
+    const api = {
+        get [wrapSymbol](){
+            return true;
+        },
+        get name(){
+            return fn?.name || 'anonymous';
+        },
+        get isRunning(){
+            return !!state.running;
+        },
+
+        then(resolve, reject){
+            if (typeof resolve == 'function')
+                state.after.push(resolve);
+
+            if (typeof reject == 'function')
+                state.catch.push(resolve);
+
+            return this;
+        },
+        catch(reject){
+            return this.then(null, reject)
+        },
+        finally(callback){
+            if (typeof callback == 'function')
+                state.finally.push(callback);
+
+            return this;
+        },
+
+        async sleep(mls){
+            const pwr = Promise.withResolvers();
+            // Set up a timer to resolve the promise after the specified delay
+            const timer = setTimeout(pwr.resolve, mls);
+            // Ensure the timer is cleared when the promise is settled to prevent memory leaks
+            return await pwr.promise.finally(() => clearTimeout(timer));
+        },
+    };
+
+    const result = async function * (...args) {
+        state.running = true;
+
+        try {
+            for (let fn of state.before) {
+                yield * fn.asAsyncGenerator().call(thisArg, args);
+            }
+
+            const res = yield * fn.asAsyncGenerator().call(thisArg, args);
+
+            for (let fn of state.after) {
+                yield * fn.asAsyncGenerator().call(thisArg, [res]);
+            }
+
+            return res;
+        } catch (e) {
+            if (!state.catch.length) throw e;
+
+            for (let fn of state.catch) {
+                yield * fn.asAsyncGenerator().call(thisArg, [e]);
+            }
+        } finally {
+            for (let fn of state.finally) {
+                yield * fn.asAsyncGenerator().call(thisArg, []);
+            }
+        }
+
+        state.running = false;
+    };
+
+    Object.assign(result, api);
+
+    return result;
+}
+
+/**
+ *
+ * @param fn {Function & Generator}
+ * @this {Function & Generator}
+ * @returns {Generator|AsyncGenerator}
+ */
+function generatorWrapper(fn) {
+    const orig = this;
+    const state = {before: [], after: [], catch: [], finally: []};
+
+    const result = function* wrap(...args) {
+        try {
+
+        } catch (e) {
+
+        } finally {
+
+        }
+    };
+    return result;
+}
 
 /**
  * Creates a debounced version of the provided function that returns a Promise.
@@ -152,3 +362,5 @@ Function.prototype.once = function once() {
         return orig.apply(this, args);
     };
 }
+
+

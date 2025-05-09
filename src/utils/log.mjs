@@ -165,7 +165,7 @@ export class EventLog {
         const _ = this.#events.dispatchEvent(new CustomEvent('log', {
             cancelable: true,
             bubbles: true,
-            detail: LogEvent(level, stacktrace(2), args),
+            detail: LogEvent(level, stackLocation(2), args),
         }));
     }
 
