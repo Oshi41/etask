@@ -100,5 +100,6 @@ global.stacktrace = function stacktrace(skip = 0) {
     }
 };
 
-// installing default logger
-global.log = await import('./log.mjs').then(m => m.default);
+import log from "./log.mjs";
+
+global.log = log

@@ -1,3 +1,6 @@
+import './global.mjs';
+import './object.mjs';
+
 Proxy.this = function (_this, api) {
     return new Proxy(_this || {}, {
         get(target, p, receiver) {
@@ -20,3 +23,16 @@ Proxy.this = function (_this, api) {
         }
     });
 };
+
+Proxy.canProxy = function (obj) {
+
+};
+
+class ReactiveProxy extends Proxy {
+    #root;
+
+    constructor(root, init) {
+        super(root, init);
+        this.#root = root;
+    }
+}

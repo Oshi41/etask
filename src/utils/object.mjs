@@ -1,4 +1,5 @@
 import './global.mjs';
+import './gen.mjs';
 
 /**
  * Validates and normalizes a path string or array used for deep object navigation.
@@ -113,4 +114,112 @@ Object.set = function (src, paths, value) {
         temp = temp[key];
     }
     temp[paths.at(-1)] = value;
+}
+
+/**
+ *
+ * @param obj
+ * @returns {[
+ * {isComplex: (false|boolean|arg is any[]), frozen: boolean},
+ * (function(): Generator<[string,*], void, *>)
+ * ]}
+ */
+Object.stats = function (obj) {
+    const meta = {
+        isComplex: obj != null && (typeof obj == 'object' || Array.isArray(obj) || typeof obj == 'function'),
+        frozen: Object.isFrozen(obj),
+    };
+    const entries = function* entries() {
+        if (!meta.isComplex) return;
+
+        for (let key of Object.keys(obj)) {
+            try {
+                const value = obj[key];
+                yield [key, value];
+            } catch (e) {
+                // ignored
+            }
+        }
+    };
+
+    return [meta, entries];
+}
+
+/**
+ *
+ * @param root
+ * @param deep
+ * @param strategy {'deep' | 'layer'}
+ * @yields {{root, prop, value, stats: {leaf: boolean, frozen: boolean, keys: string[], getKey(*): ({value: *}|undefined)}}|{value: *}}
+ */
+Object.forEachRecursive = function (root, {deep = 10, strategy = 'deep'} = {}) {
+    const visited = new WeakMap();
+
+    const visit = function visit(value, prop = []) {
+        if (visited.has(value)) return {fail: 'recursive'};
+        if (prop.length > deep) return {fail: 'maxDeepReached'};
+
+        const [stats, getEntries] = Object.stats(value);
+        const result = {
+            ret: {
+                root,
+                prop,
+                value,
+                stats,
+            },
+            children: function* children() {
+                if (stats.isComplex)
+                    yield* getEntries().map(([key, value]) => [value, [...prop, key]]);
+            },
+        };
+
+        if (stats.isComplex)
+            visited.set(value, result);
+
+        return result;
+    };
+
+    const deepStrategy = function* deepStrategy(value, prop = []) {
+        const step = visit(value, prop);
+        if (step.fail) return;
+
+        yield step.ret;
+        yield* step.children().flatMap(x => deepStrategy(...x));
+    }
+
+    /**
+     *
+     * @param values {Iterable<[key: string, value: string]>}
+     * @returns {any}
+     */
+    const layerStrategy = function* layerStrategy(values) {
+
+        const nextLevel = [];
+
+        for (let step of values[Symbol.iterator]()
+            .map(([value, prop]) => visit(value, prop))
+            .filter(x => !x.fail)) {
+
+            yield step.ret;
+
+            nextLevel.push(step.children());
+        }
+
+        if (nextLevel.length) {
+            yield* layerStrategy(nextLevel[Symbol.iterator]().flatMap(x => x));
+        }
+    }
+
+    switch (strategy) {
+        case "layer":
+            return layerStrategy([[root, []]]);
+
+        case "deep":
+        default:
+            return deepStrategy(root);
+    }
+}
+
+for (let {prop, stats} of Object.forEachRecursive(global, {deep: 10, strategy: 'layer'}).take(1000)) {
+    console.log(prop, stats);
 }
