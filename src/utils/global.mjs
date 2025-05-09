@@ -99,3 +99,6 @@ global.stacktrace = function stacktrace(skip = 0) {
         Error.stackTraceLimit = limit;
     }
 };
+
+// installing default logger
+global.log = await import('./log.mjs').then(m => m.default);
