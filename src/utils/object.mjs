@@ -220,9 +220,3 @@ Object.forEachRecursive = function (root, {deep = 10, strategy = 'deep'} = {}) {
             return deepStrategy(root);
     }
 }
-
-
-
-for (let {prop, stats} of Object.forEachRecursive(global, {deep: 10, strategy: 'layer'}).take(1000)) {
-    console.log(prop, stats);
-}
