@@ -1,19 +1,45 @@
-const Generator = Object.getPrototypeOf(function* () {
+import './func.mjs';
 
+/*** @type {GeneratorFunction}*/
+const Generator = Object.getPrototypeOf(function* () {
+});
+/*** @type {AsyncGeneratorFunction}*/
+const AsyncGenerator = Object.getPrototypeOf(async function* () {
 });
 
-export function isGenerator(obj) {
-    return obj instanceof Generator
-        || obj?.constructor === Generator;
-}
+/**
+ *
+ * @this {Generator | AsyncGenerator}
+ * @type {{}}
+ */
+const api = {
+    /**
+     *
+     * @yields {{done, value, error}}
+     */
+    safeYield: async function* () {
+        const gen = this?.[Symbol.asyncIterator]?.() || this?.[Symbol.iterator]?.();
+        let step = {};
+        while (!step.done) {
+            try {
+                step = await gen.next();
+            } catch (e) {
+                step = {error: e, done: true};
+            }
+            yield step;
+        }
+        return step;
+    },
+    concat: async function* (...others) {
+        for (let gen of [this, ...others]) {
+            let step = yield* this.safeYield();
+            if (step.error) {
+                throw step.error;
+                return;
+            }
+        }
+    },
+};
 
-Generator.prototype.concat = function* (...others) {
-    yield* this[Symbol.iterator]();
-
-    for (let other of others) {
-        if (other instanceof Generator)
-            yield* other();
-        else if (other?.constructor === Generator)
-            yield* other;
-    }
-}
+Object.assign(Generator.prototype, api);
+Object.assign(AsyncGenerator.prototype, api);
