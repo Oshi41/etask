@@ -1,100 +1,114 @@
-if (typeof global != 'object') {
-    if (typeof window != 'undefined') {
-        window.global = window;
-    } else if (typeof globalThis != 'undefined') {
-        globalThis.global = globalThis;
-    } else if (typeof self != 'undefined') {
-        self.global = self;
-    }
-}
+const refTypes = new Set(['function', 'object']);
 
 /**
- * Determines if the provided object is a function.
+ * Determines whether the provided object is a function.
  *
- * This utility checks using three different methods:
- * 1. typeof operator checking for 'function'
- * 2. instanceof Function check
- * 3. Existence of apply and call methods (function characteristics)
- *
- * @param {*} obj - The object to test
- * @returns {boolean} - True if the object is a function, false otherwise
+ * @param {any} obj - The object to check.
+ * @return {boolean} Returns true if the object is a function, otherwise false.
  */
-global.isFunc = function (obj) {
+export function isFunc(obj) {
     if (!obj) return false;
 
     return typeof obj === 'function'
         || obj instanceof Function
         || [obj?.apply, obj?.call].every(x => isFunc(x));
-};
+}
 
 /**
- * A shorthand for Array.isArray
+ * Determines whether the provided value is a plain JavaScript object.
  *
- * @param {*} arr - The value to check
- * @returns {boolean} - True if the value is an array, false otherwise
+ * A plain object is typically an object created using object literals
+ * or the Object constructor, and not an instance of a custom class or derived objects.
+ *
+ * @param {any} o The value to be checked.
+ * @return {boolean} Returns `true` if the value is a plain object; otherwise, returns `false`.
  */
-global.isArray = Array.isArray;
-global.assign = Object.assign;
-
-/**
- * Determines if the provided value is a plain object.
- *
- * An object is considered "plain" when:
- * - It's typeof 'object'
- * - It's not null
- * - It's not a function
- * - It's not an array
- *
- * @param {*} o - The value to check
- * @returns {boolean} - True if the value is a plain object, false otherwise
- */
-global.isPlainObject = function (o) {
+export function isPlainObject(o) {
     return o != null && typeof o === 'object' && !isFunc(o) && !isArray(o);
 }
 
-global.isPrimitive = function (o) {
-    switch (typeof o) {
-        case "function":
-        case "object":
-            return false;
+/**
+ * Determines if a given value is of a primitive data type.
+ *
+ * @param {any} o - The value to check.
+ * @return {boolean} - Returns true if the value is a primitive type, false otherwise.
+ */
+export function isPrimitive(o) {
+    return !o || !refTypes.has(typeof o);
+}
 
-        default:
-            return true;
+export function tryDispose(obj) {
+    const func = obj?.[Symbol.dispose] || obj?.[Symbol.disposeAsync];
+    if (isFunc(func)) {
+        func.call(obj);
+        return true;
     }
 }
 
 /**
- * Checks if an object implements the Symbol.dispose method (disposable pattern).
+ * Checks if a given object is disposable.
+ * An object is considered disposable if it is not a primitive,
+ * contains a property with the symbol `Symbol.dispose`,
+ * and the value of this property is a function.
  *
- * This checks for compatibility with the ECMAScript Explicit Resource Management proposal,
- * which allows for deterministic cleanup of resources.
- *
- * @param {*} o - The object to check
- * @returns {boolean} - True if the object implements the dispose method, false otherwise
+ * @param {any} o - The object to check for disposability.
+ * @return {boolean} Returns true if the object is disposable, otherwise false.
  */
-global.isDisposable = function (o) {
+export function isDisposable(o) {
     const prop = Symbol.dispose;
     return !isPrimitive(o) && prop in o && isFunc(o[prop]);
 }
 
-global.isAsyncDisposable = function (o) {
-    const prop = Symbol.asyncDispose;
+/**
+ * Determines if the given object is an iterator.
+ *
+ * @param {any} o The object to be checked.
+ * @return {boolean} True if the object is an iterator; otherwise, false.
+ */
+export function isIterator(o) {
+    const prop = Symbol.iterator;
     return !isPrimitive(o) && prop in o && isFunc(o[prop]);
 }
 
 /**
- * Returns current call location.
- * @param skip {number}
- * @returns {{
- *     file: string,
- *     class: string,
- *     function: string,
- *     file: string,
- *     line: number,
- *     column: number,
- * }}
+ * Checks if the provided object is an asynchronous iterator.
+ *
+ * @param {any} o The object to test if it is an asynchronous iterator.
+ * @return {boolean} Returns true if the object is an asynchronous iterator, false otherwise.
  */
-global.stackLocation = function stackLocation(skip = 0) {
+export function isAsyncIterator(o) {
+    const prop = Symbol.asyncIterator;
+    return !isPrimitive(o) && prop in o && isFunc(o[prop]);
+}
+
+/**
+ * Determines if the given object is an asynchronous disposable object.
+ *
+ * This method checks if the object is non-primitive, has a property
+ * associated with the Symbol.dispose symbol, and that the property
+ * is a function.
+ *
+ * @param {any} o - The object to be checked for asynchronous disposal capability.
+ * @return {boolean} Returns true if the object satisfies the conditions for being asynchronously disposable, otherwise false.
+ */
+export function isAsyncDisposable(o) {
+    const prop = Symbol.dispose;
+    return !isPrimitive(o) && prop in o && isFunc(o[prop]);
+}
+
+/**
+ * Extracts and returns the location of a specific call in the call stack.
+ * This includes details such as file, class, function, line, and column.
+ *
+ * @param {number} [skip=0] - The number of stack frames to skip. Defaults to 0, meaning it provides the current frame location.
+ * @return {Object} An object containing details about the stack location, including:
+ * - `file` (string): The file name or function origin.
+ * - `class` (string): The type name of the object.
+ * - `function` (string): The function or method name.
+ * - `line` (number): The line number in the file.
+ * - `column` (number): The column number in the line.
+ */
+export function stackLocation(skip = 0) {
     const prepare = Error.prepareStackTrace;
     const limit = Error.stackTraceLimit;
 
@@ -116,8 +130,62 @@ global.stackLocation = function stackLocation(skip = 0) {
         Error.prepareStackTrace = prepare;
         Error.stackTraceLimit = limit;
     }
-};
+}
 
-import log from "./log.mjs";
-global.log = log
+/**
+ * Checks if the provided value is an array.
+ *
+ * @param {*} o - The value to check.
+ * @return {boolean} True if the value is an array, otherwise false.
+ */
+export function isArray(o) {
+    return Array.isArray(o);
+}
+
+/**
+ * Assigns properties from one or more source objects to a target object.
+ * Properties in later objects will overwrite properties in earlier objects with the same key.
+ *
+ * @param {Object} o - The target object that will receive the properties.
+ * @param {...Object} others - One or more source objects whose properties will be assigned to the target object.
+ * @return {Object} The updated target object with combined properties.
+ */
+export function assign(o, ...others) {
+    return Object.assign(o, ...others);
+}
+
+/**
+ * Asserts that a given condition is true, throwing an error message to the console if the assertion fails.
+ *
+ * @param {boolean} condition - The condition to evaluate. If false, the assertion fails.
+ * @param {string} errString - The error message to display in the console when the assertion fails.
+ * @return {void} This function does not return a value.
+ */
+export function assert(condition, errString) {
+    if (!condition) throw new Error(errString || 'error during assertion');
+}
+
+/**
+ * Installs a globally accessible property with a dynamic getter on the global object.
+ * The property is defined so that its value is determined by the provided getter function.
+ *
+ * @param {string} name - The name of the global property to define.
+ * @param {Function} valueGetter - A function that returns the value of the global property when accessed.
+ * @return {void} No return value.
+ * @throws {Error} If the global object cannot be determined.
+ */
+export function installGlobal(name, valueGetter) {
+    const _this = typeof global != 'undefined' && global
+        || typeof self != 'undefined' && self
+        || typeof globalThis != 'undefined' && globalThis
+        || typeof window != 'undefined' && window;
+
+    if (!_this) throw new Error('Global object not found');
+
+    Object.defineProperty(_this, name, {
+        get() {
+            return valueGetter();
+        }
+    });
+}
 

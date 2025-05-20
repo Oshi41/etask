@@ -27,3 +27,7 @@ Promise.sleep = async function (ms) {
     // Ensure the timer is cleared when the promise is settled to prevent memory leaks
     return await pwr.promise.finally(() => clearTimeout(timer));
 };
+
+Promise.wait = async function () {
+    const pwr = Promise.withResolvers();
+}

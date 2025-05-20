@@ -1,6 +1,7 @@
 /**
  * Formats a Date object according to a specified format string
  *
+ * @param jsDate {Date}
  * @param format {string} - The format pattern to use (e.g., "yyyy-MM-dd HH:mm:ss")
  * @param locale {string} - The locale to use for language-specific formatting (default: 'en-US')
  * @returns {string} - The formatted date string
@@ -24,48 +25,48 @@
  * ff   - Milliseconds with two digits (00-99)
  * f    - Milliseconds with one digit (0-9)
  */
-Date.prototype.format = function (format, locale = 'en-US') {
+export function format(jsDate, format, locale = 'en-US') {
     return format.replace(/\b(yyyy|yy|MMMM|MMM|MM|M|dd|d|HH|H|mm|m|ss|s|fff|ff|f)\b/g, (match) => {
 
         switch (match) {
             case 'yyyy':
-                return this.getFullYear();
+                return jsDate.getFullYear();
             case 'yy':
-                return this.getFullYear().toString().slice(-2);
+                return jsDate.getFullYear().toString().slice(-2);
 
             case 'MMMM':
-                return new Intl.DateTimeFormat(locale, {month: 'long'}).format(this);
+                return new Intl.DateTimeFormat(locale, {month: 'long'}).format(jsDate);
             case 'MMM':
-                return new Intl.DateTimeFormat(locale, {month: 'short'}).format(this);
+                return new Intl.DateTimeFormat(locale, {month: 'short'}).format(jsDate);
             case 'MM':
-                return (this.getMonth() + 1).toString().padStart(2, '0');
+                return (jsDate.getMonth() + 1).toString().padStart(2, '0');
             case 'M':
-                return (this.getMonth() + 1);
+                return (jsDate.getMonth() + 1);
 
             case 'dd':
-                return this.getDate().toString().padStart(2, '0');
+                return jsDate.getDate().toString().padStart(2, '0');
             case 'd':
-                return this.getDate();
+                return jsDate.getDate();
 
             case 'HH':
-                return this.getHours().toString().padStart(2, '0');
+                return jsDate.getHours().toString().padStart(2, '0');
             case 'H':
-                return this.getHours();
+                return jsDate.getHours();
 
             case 'mm':
-                return this.getMinutes().toString().padStart(2, '0');
+                return jsDate.getMinutes().toString().padStart(2, '0');
             case 'm':
-                return this.getMinutes();
+                return jsDate.getMinutes();
 
             case 'ss':
-                return this.getSeconds().toString().padStart(2, '0');
+                return jsDate.getSeconds().toString().padStart(2, '0');
             case 's':
-                return this.getSeconds();
+                return jsDate.getSeconds();
 
             case 'fff':
             case 'ff':
             case 'f':
-                return this.getMilliseconds().toString().padStart(3, '0').slice(0, match.length);
+                return jsDate.getMilliseconds().toString().padStart(3, '0').slice(0, match.length);
 
             default:
                 return match;

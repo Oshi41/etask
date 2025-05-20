@@ -122,7 +122,7 @@ export function location(skip = 0) {
         isToplevel: true,
 
         limit: 5 + skip,
-    }).at(-1);
+    }).nodeAt(-1);
 
     const result = {
         file: st.getEvalOrigin || st.getFileName || st.getScriptNameOrSourceURL,

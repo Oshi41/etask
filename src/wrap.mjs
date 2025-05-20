@@ -2,10 +2,11 @@ import "./utils/func.mjs";
 import "./utils/gen.mjs";
 import "./utils/promise.mjs";
 
-function wrapper(func) {
+export const wrapper = function wrapper(func) {
     this.callbacks = {before: [], after: [], catch: [], finally: [],};
     this.stage = '';
     this.retVal = {};
+    this._gen = null;
     Object.defineProperties(this, {
         isWrapped: {get: () => true,},
         func: {get: () => func,},
@@ -14,6 +15,7 @@ function wrapper(func) {
     });
 }
 
+wrapper.prototype.sleep = Promise.sleep;
 wrapper.prototype.then = function (resolve, reject) {
     isFunc(resolve) && this.callbacks.after.push(resolve);
     isFunc(reject) && this.callbacks.catch.push(reject);
@@ -30,7 +32,20 @@ wrapper.prototype.finally = function (callback) {
     isFunc(callback) && this.callbacks.finally.push(callback);
     return this;
 }
-wrapper.prototype.sleep = Promise.sleep;
+
+wrapper.prototype.throw = function (error) {
+    this.retVal.error = error;
+    delete this.retVal.value;
+    this._gen?.throw?.(error);
+    return this;
+}
+wrapper.prototype.return = function (value) {
+    this.retVal.value = value;
+    delete this.retVal.error;
+    this._gen?.return?.(value);
+    return this;
+}
+
 
 /**
  *
@@ -113,6 +128,7 @@ wrapper.prototype.runStage = async function* (stage, thisArg, args) {
             return yield* this.runStage('finally2', thisArg, args);
 
         case "finally2":
+            this.stage = '';
             if (this.retVal.error) {
                 throw this.retVal.error;
             }
@@ -123,12 +139,16 @@ wrapper.prototype.runStage = async function* (stage, thisArg, args) {
 wrapper.prototype.apply = async function (thisArg, args) {
     thisArg = Proxy.this(thisArg, this);
 
-    const gen = this.runStage('start', thisArg, args).safeYield();
-    for await (const {done, error, value} of gen) {
-        if (!done) continue;
+    this._gen = this.runStage('start', thisArg, args).safeYield();
+    try {
+        for await (const {done, error} of this._gen) {
+            if (!done) continue;
 
-        if (error) throw error;
+            if (error) throw error;
+        }
 
-        return value;
+        return this.retVal.value;
+    } finally {
+        this._gen = null;
     }
 }

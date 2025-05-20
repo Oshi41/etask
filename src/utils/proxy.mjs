@@ -1,28 +1,29 @@
-import './global.mjs';
+export function proxyThis(_this, api) {
+    const has = function (prop) {
+        return prop in api;
+    };
 
-Proxy.this = function (_this, api) {
     return new Proxy(_this || {}, {
         get(target, p, receiver) {
-            if (p in api)
-                return Reflect.get(api, p, receiver);
+            if (has(p)) {
+                const result = api[p];
+                return typeof result == 'function'
+                    ? result.bind(api)
+                    : result;
+            }
 
             return Reflect.get(target, p, receiver);
         },
         has(target, p) {
-            return p in api || Reflect.has(target, p);
+            return has(p) || Reflect.has(target, p);
         },
         ownKeys(target) {
             return [...Reflect.ownKeys(api), ...Reflect.ownKeys(target)];
         },
         apply(target, thisArg, argArray) {
-            if (Object.hasOwn(api, p))
-                return Reflect.apply(api, thisArg, argArray);
-
-            return Reflect.apply(target, thisArg, argArray);
+            return has(target?.name)
+                ? Reflect.apply(api, thisArg, argArray)
+                : Reflect.apply(target, thisArg, argArray);
         }
     });
-};
-
-Proxy.canProxy = function (obj) {
-
-};
+}

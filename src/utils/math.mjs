@@ -1,3 +1,5 @@
+import {assert} from './global.mjs'
+
 /**
  * Constrains a number to be within a specified range.
  *
@@ -22,8 +24,9 @@
  * // Returns 10 (clamped to max)
  * Math.clamp(15, 0, 10);
  */
-Math.clamp = function clamp(x, min, max) {
-    console.assert(min <= max, 'min must be less than or equal to max');
+export function clamp(min, x, max) {
+    assert(min < max, 'min must be less than or equal to max');
+
     if (x < min)
         return min;
 
@@ -31,4 +34,4 @@ Math.clamp = function clamp(x, min, max) {
         return max;
 
     return x;
-};
+}

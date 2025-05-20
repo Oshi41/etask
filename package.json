@@ -16,6 +16,9 @@
   "scripts": {
     "test": "mocha tests.js"
   },
+  "dependencies": {
+    "openai-fetch": "latest"
+  },
   "devDependencies": {
     "mocha": "latest",
     "nyc": "latest"

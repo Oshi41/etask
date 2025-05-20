@@ -3,14 +3,6 @@ import './gen.mjs';
 import './proxy.mjs';
 import './promise.mjs';
 
-const functions = {
-    async: async function () {
-    },
-    gen: function* () {
-    },
-    asyncGen: async function* () {
-    },
-};
 
 Object.defineProperties(Function.prototype, {
     isAsync: {
@@ -32,21 +24,33 @@ Object.defineProperties(Function.prototype, {
  * @returns {Function}
  */
 Function.prototype.asDisposable = function () {
-    let called = false;
-
-    this[Symbol.asyncDispose] = async () => {
-        if (called) return;
-        called = true;
-
-        if (this.isGen) {
-            await this().runAsync();
-        } else {
-            await this();
+    return {
+        // [Symbol.asyncDispose]: async () => {
+        //     if (this.isGen) {
+        //         await this();
+        //     } else {
+        //         await this();
+        //     }
+        // },
+        [Symbol.dispose]() {
+            this();
         }
-    };
-    this[Symbol.dispose] = () => this[Symbol.asyncDispose]();
-
-    return this;
+    }
+    // let called = false;
+    //
+    // this[Symbol.asyncDispose] = async () => {
+    //     if (called) return;
+    //     called = true;
+    //
+    //     if (this.isGen) {
+    //         await this();
+    //     } else {
+    //         await this();
+    //     }
+    // };
+    // this[Symbol.dispose] = () => this[Symbol.asyncDispose]();
+    //
+    // return this;
 }
 
 /**
@@ -62,10 +66,25 @@ Function.prototype.asGen = function () {
     };
 
     if (this.isAsync) return async function* promise2AsyncGenWrapper(...args) {
-        return yield _this.apply(this, args);
+        const res = _this.apply(this, args);
+        yield res;
+        return res;
     }
 
     return async function* func2AsyncGenWrapper(...args) {
-        return yield _this.apply(this, args);
+        const res = _this.apply(this, args);
+        yield res;
+        return res;
     };
 }
+
+Function.prototype.once = function () {
+    const fn = this;
+    let called;
+    return function (...args) {
+        if (called) return;
+
+        called = true;
+        return fn.apply(this, args);
+    };
+};
