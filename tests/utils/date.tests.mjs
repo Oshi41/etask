@@ -1,5 +1,5 @@
 import {format} from "../../src/utils/date.mjs";
-import {describe, it} from "mocha";
+import {describe, it} from "node:test";
 import assert from "assert";
 
 describe("format", () => {

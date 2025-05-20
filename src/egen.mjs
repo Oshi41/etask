@@ -24,7 +24,21 @@ export class Runner extends Iterator {
         const _runner = this;
         thisArg = proxyThis(thisArg, this);
 
-        this.#inner = runStage('start', args);
+        this.run = async function run() {
+            if (!_runner.#runner) {
+                _runner.#runner = new Promise(async (resolve, reject) => {
+                    _runner.#inner = runStage('start', args);
+
+                    for await (let step of safeYield(_runner.#inner)) {
+                        await step;
+                    }
+
+                    resolve(_runner.#retVal.value);
+                })
+            }
+
+            return _runner.#runner;
+        }
 
         const runCallbacks = async function* runCallbacks(callbacks, funcArguments) {
             if (callbacks?.length) {
@@ -127,28 +141,11 @@ export class Runner extends Iterator {
         return this.#runner;
     }
 
-    async #run() {
-        if (!this.#runner && this.#inner) {
-            this.#runner = new Promise(async (resolve, reject) => {
-                for await (let step of safeYield(this.#inner)) {
-
-                }
-
-                if (this.#retVal.error)
-                    reject(this.#retVal.error);
-
-                resolve(this.#retVal.value);
-            });
-        }
-
-        return this.#runner;
-    }
-
     then(resolve, reject) {
         if (isFunc(resolve)) this.#callbacks.after.push(resolve);
         if (isFunc(reject)) this.#callbacks.catch.push(reject);
 
-        return this.#run()
+        return this.run()
     }
 
     catch(reject) {
@@ -158,12 +155,6 @@ export class Runner extends Iterator {
     finally(cb) {
         if (isFunc(cb)) this.#callbacks.finally.push(cb);
         return this;
-    }
-
-    async sleep(mls) {
-        const p = new Promise(r => setTimeout(r, mls));
-        p.then(() => this.next(true));    // <-- resume the runner when the timer fires
-        await this.#inner.next(p);
     }
 
     async next(value) {
@@ -182,3 +173,18 @@ export class Runner extends Iterator {
         return this;
     }
 }
+
+new Runner(async function* () {
+    this.finally(() => {
+        console.log('finally')
+    });
+    this.catch((e) => {
+        console.error(e)
+    });
+
+    yield 1;
+    yield 2;
+    console.log('before return')
+    this.return({value: 3});
+    return 74;
+}).then(console.log);

@@ -100,4 +100,56 @@ describe('LinkedList', function () {
             assert.deepEqual(iteratedValues, []);
         });
     });
+
+    describe('deletion', function () {
+        this.timeout(10000);
+
+        for (let size of [1, 1000, 10_000, 100_000]) {
+            it(`[array] [${size}] fill and delete`, () => {
+                const arr = Array(size)
+                    .keys()
+                    .map(x => ({
+                        elem: x,
+                        discard() {
+                            const index = arr.indexOf(this);
+                            if (index !== -1) {
+                                arr.splice(index, 1);
+                            }
+                        }
+                    }))
+                    .toArray();
+
+                assert.equal(arr.length, size);
+
+                const nodesToCall = [...arr];
+                arr.sort(() => Math.random() - 0.5);
+
+
+                for (let node of nodesToCall) {
+                    node.discard();
+                }
+
+                assert.equal(arr.length, 0);
+            });
+
+            it(`[list] [${size}] fill and delete]`, () => {
+                const list = new LinkedList();
+                const nodes = [];
+
+                for (let item of Array(size).keys().toArray().sort(() => Math.random() - 0.5)) {
+                    const node = list.insertValue(item, -1, 'after');
+                    nodes.push(node);
+                }
+
+                assert.equal(nodes.length, size);
+                assert.equal(list.length, size);
+
+                for (let node of nodes) {
+                    node[Symbol.dispose]();
+                }
+
+                assert.equal(list.length, 0);
+            });
+        }
+    });
 });

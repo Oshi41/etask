@@ -33,12 +33,14 @@ export class LinkedList {
                 if (this.next) this.next.prev = this.prev;
 
                 // clear node value
-                if (this.value) {
+                if ('value' in this) {
                     list.length--;
                     tryDispose(this.value);
                 }
 
-                this.value = this.next = this.prev = null;
+                delete this.prev;
+                delete this.next;
+                delete this.value;
             }
         };
 

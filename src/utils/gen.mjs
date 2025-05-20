@@ -78,9 +78,9 @@ export async function* safeYield(gen) {
         step = {error: new Error('gen should implement iterator interface'), done: true};
     }
 
-    while (!step.done) {
+    while (!step?.done) {
         try {
-            step = yield gen.next(step.value);
+            step = await gen.next(step?.value);
         } catch (e) {
             step = {error: e, done: true};
         }

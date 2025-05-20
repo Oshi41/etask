@@ -60,7 +60,7 @@ class SubscriptionState {
      * @param {any} [opts.sender] - possible sibscription sender.
      **/
     constructor(type, callback, opts = {}) {
-        assert(!type, 'Unknown event type provided');
+        assert(!!type, 'Unknown event type provided');
         assert(isFunc(callback), 'callback must be a function');
 
         this.type = type;
@@ -325,7 +325,7 @@ class AsyncEventStore {
      *   - Throws information regarding any errors encountered while processing.
      */
     async* handle(state) {
-        for (let sub of this.#subscriptions) {
+        for (let {value: sub} of this.#subscriptions) {
             if (state.wasStopped) break;
 
             yield sub;
@@ -363,7 +363,7 @@ class AsyncEventStore {
                 visited.end = Date.now();
                 sub.calls++;
 
-                if (sub.maxCalls > 0 && sub.maxCalls >= sub.calls) {
+                if (sub.maxCalls > 0 && sub.calls >= sub.maxCalls) {
                     sub.discard();
                 }
             }
@@ -371,7 +371,7 @@ class AsyncEventStore {
     }
 
     [Symbol.dispose]() {
-        for (let sub of this.#subscriptions) {
+        for (let {value: sub} of this.#subscriptions) {
             sub.discard();
         }
     }
