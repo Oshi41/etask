@@ -16,35 +16,21 @@ export class Runner extends Iterator {
         cleanup: null,
     };
     #retVal = {}
-    #runner;
+    #isRunning;
 
     constructor(fn, thisArg, args) {
         super();
 
         const _runner = this;
         thisArg = proxyThis(thisArg, this);
-
-        this.run = async function run() {
-            if (!_runner.#runner) {
-                _runner.#runner = new Promise(async (resolve, reject) => {
-                    _runner.#inner = runStage('start', args);
-
-                    for await (let step of safeYield(_runner.#inner)) {
-                        await step;
-                    }
-
-                    resolve(_runner.#retVal.value);
-                })
-            }
-
-            return _runner.#runner;
-        }
+        this.#inner = runStage('start', args);
 
         const runCallbacks = async function* runCallbacks(callbacks, funcArguments) {
             if (callbacks?.length) {
                 const result = [];
                 for (let gen of callbacks.map(x => toAsyncGen(x))
                     .map(x => x.apply(thisArg, funcArguments))
+                    .filter(Boolean)
                     .map(x => safeYield(x))) {
 
                     let stepValue = null;
@@ -120,7 +106,7 @@ export class Runner extends Iterator {
                 }
                 case 'finally': {
                     if (_runner.#callbacks.finally.length) {
-                        _runner.#timeline.catch = Date.now();
+                        _runner.#timeline.finally = Date.now();
                         yield* runCallbacks(_runner.#callbacks.finally, funcArguments);
                     }
 
@@ -138,14 +124,47 @@ export class Runner extends Iterator {
     }
 
     get isRunning() {
-        return this.#runner;
+        return this.#isRunning;
+    }
+
+    set isRunning(value) {
+        // can run only if generator exists
+        value &&= !!this.#inner;
+        if (this.#isRunning === value) return;
+
+        this.#isRunning = value;
+        if (this.isRunning) {
+            const _ = new Promise(async (resolve, reject) => {
+                while (this.#isRunning || !!this.#inner) {
+                    try {
+                        const step = await this.#inner.next();
+                        if (step.done) {
+                            this.#inner = null;
+                            this.isRunning = false;
+                            return resolve();
+                        }
+                    } catch (e) {
+                        this.#inner = null;
+                        this.isRunning = false;
+                        return reject(e);
+                    }
+                }
+
+                return resolve();
+            });
+        }
     }
 
     then(resolve, reject) {
         if (isFunc(resolve)) this.#callbacks.after.push(resolve);
         if (isFunc(reject)) this.#callbacks.catch.push(reject);
 
-        return this.run()
+        if (this.#timeline.cleanup > 0) {
+            return this.#retVal.value;
+        }
+
+        this.isRunning = true;
+        return this;
     }
 
     catch(reject) {
@@ -173,18 +192,3 @@ export class Runner extends Iterator {
         return this;
     }
 }
-
-new Runner(async function* () {
-    this.finally(() => {
-        console.log('finally')
-    });
-    this.catch((e) => {
-        console.error(e)
-    });
-
-    yield 1;
-    yield 2;
-    console.log('before return')
-    this.return({value: 3});
-    return 74;
-}).then(console.log);

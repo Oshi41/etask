@@ -89,3 +89,18 @@ export async function* safeYield(gen) {
 
     return step;
 }
+
+/**
+ * Consumes the given generator and returns the final value.
+ *
+ * @param {AsyncGenerator} gen - The generator to consume.
+ * @return {Promise<*>} A promise that resolves to the final value of the generator.
+ */
+export async function consume(gen) {
+    for await (const step of safeYield(gen)) {
+        if (step.done) {
+            if (step.error) throw step.error;
+            return step.value;
+        }
+    }
+}
