@@ -2,6 +2,14 @@ import {isNode} from "./env.mjs";
 
 const os = isNode() ? await import('os') : null;
 
+/**
+ * Gathers various system, browser, window, document, and environment statistics.
+ * This method examines the runtime environment (browser, Node.js, OS) to collect
+ * detailed metrics about the environment, including hardware, software, and capabilities.
+ * The specific attributes returned depend on the availability of APIs in the runtime.
+ *
+ * @return {Object} An object containing comprehensive metrics about the runtime environment.
+ */
 export function stats() {
     const metrics = {
         timestamp: Date.now(),
@@ -19,12 +27,13 @@ export function stats() {
             pdfViewerEnabled: navigator.pdfViewerEnabled,
             userAgent: navigator.userAgent,
 
-
             // Device info
             deviceMemory: navigator.deviceMemory,
             hardwareConcurrency: navigator.hardwareConcurrency,
             maxTouchPoints: navigator.maxTouchPoints,
             platform: navigator.platform,
+
+            plugins: navigator.plugins,
 
             serviceWorkersSupported: (() => {
                 try {

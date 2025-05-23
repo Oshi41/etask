@@ -82,6 +82,39 @@ export function isAsyncIterator(o) {
 }
 
 /**
+ * Determines whether the given function is a generator function.
+ *
+ * @param {Function} func - The function to be checked.
+ * @return {boolean} Returns true if the provided function is a generator function, otherwise false.
+ */
+export function isGeneratorFunction(func) {
+    return isFunc(func) && (function* () {
+    }).constructor === func.constructor;
+}
+
+/**
+ * Determines if the provided function is an async generator function.
+ *
+ * @param {Function} func The function to test.
+ * @return {boolean} Returns `true` if the function is an async generator function, otherwise `false`.
+ */
+export function isAsyncGeneratorFunction(func) {
+    return isFunc(func) && (async function* () {
+    }).constructor === func.constructor;
+}
+
+/**
+ * Determines whether a given function is an async function.
+ *
+ * @param {Function} func - The function to evaluate.
+ * @return {boolean} Returns `true` if the input is an async function, otherwise `false`.
+ */
+export function isAsyncFunction(func) {
+    return isFunc(func) && (async function () {
+    }).constructor === func.constructor;
+}
+
+/**
  * Determines if the given object is an asynchronous disposable object.
  *
  * This method checks if the object is non-primitive, has a property

@@ -2,9 +2,9 @@ import {assert, tryDispose} from "./utils/global.mjs";
 
 export class LinkedList {
     constructor() {
-        /** @type {null | ReturnType<#createNode>}*/
+        /** @type {null | {value}}*/
         this.head = null;
-        /** @type {null | ReturnType<#createNode>}*/
+        /** @type {null | {value}}*/
         this.tail = null;
         this.length = 0;
     }
@@ -23,6 +23,9 @@ export class LinkedList {
             prev: null,
             value,
             next: null,
+            dispose() {
+                this[Symbol.dispose]();
+            },
             [Symbol.dispose]: function dispose() {
                 // move head / tail
                 if (this === list.head) list.head = this.next;
@@ -106,6 +109,13 @@ export class LinkedList {
             }
             return node;
         }
+    }
+
+    clear() {
+        for (let node of this[Symbol.iterator]()) {
+            node[Symbol.dispose]();
+        }
+        return this.length;
     }
 
     * [Symbol.iterator]() {
