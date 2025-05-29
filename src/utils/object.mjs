@@ -1,5 +1,4 @@
-import './global.mjs';
-import './gen.mjs';
+import {isPrimitive} from "./global.mjs";
 
 /**
  * Validates and normalizes a path string or array used for deep object navigation.
@@ -71,7 +70,7 @@ Object.get = function (src, paths) {
     paths = pathValidate(paths);
     let temp = src;
 
-    while (isRefType(temp) && paths.length) {
+    while (!isPrimitive(temp) && paths.length) {
         temp = temp[paths.shift()];
     }
     return temp;

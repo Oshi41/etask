@@ -1,297 +1,718 @@
-import {isFunc} from "./global.mjs";
-import {once} from "./func.mjs";
-import {proxyThis} from "./proxy.mjs";
-import {sleep} from "./promise.mjs";
+import {isFunc, isPrimitive} from "./global.mjs";
+import {installTimeline} from './timeline.mjs';
 
-class SafeGenerator {
-    #inner;
 
-    //#region Private
-    #pwr;
-    #children = [];
-    #timeline = {start: null, end: null};
-    #run;
+class SafeRunGenerator extends Iterator {
+    #state = {};
 
-    constructor(generator) {
-        this.#inner = generator;
-        this.#children = [];
-        this.#pwr = Promise.withResolvers();
-        this.#timeline = {start: null, end: null};
+    constructor(obj) {
+        super();
 
-        this.#run = once(async () => {
-            let step;
+        installTimeline(this)
+            .with('start')
+            .with('run', 'error')
+            .with('end');
 
-            while (!this.isFinished) {
-                step = await this.next(step?.value)
+        this.#state.inner = !isPrimitive(obj) && isFunc(obj?.[Symbol.iterator]) && obj[Symbol.iterator]()
+            || !isPrimitive(obj) && isFunc(obj?.[Symbol.asyncIterator]) && obj[Symbol.asyncIterator]()
+            || isFunc(obj?.then) && async function* promise2gen() {
+                return yield obj;
             }
+            || isFunc(obj) && async function* func2Gen() {
+                return obj();
+            };
 
-            return step;
-        });
+        if (!this.#state.inner)
+            this.return(obj);
     }
-
-    get isFinished() {
-        return !this.#inner && !this.#children.length;
-    }
-
-    async #onFinish({error, value} = {}) {
-        // wash finisehd already
-        if (this.#timeline.end) return {done: true};
-
-        this.#timeline.end = Date.now();
-        this.#inner = this.#children.length = 0;
-
-        sleep(1).then(() => {
-            if (error)
-                return this.#pwr.reject(error);
-
-            return this.#pwr.resolve(value);
-        });
-
-        return {done: true, error, value};
-    }
-
-    async #nextChild(child, ...args) {
-        let step;
-
-        try {
-            step = await child.next(...args);
-        } catch (e) {
-            step = {done: true, error: e};
-        } finally {
-            if (step.done) {
-                const i = this.#children.indexOf(child);
-                if (i !== -1)
-                    this.#children.splice(i, 1);
-            }
-        }
-
-        // failed
-        if (step.done && step.error)
-            return await this.throw(step.error, true);
-
-        // finished as last gen instruction
-        if (step.done && !step.error && !this.#children.length && !this.#inner) {
-            return this.#onFinish(step);
-        }
-
-        // returning child result
-        return {...step, done: false};
-    }
-
-    //#endregion
-
-    //#region Iterator
-
-    async #it(name, ...args) {
-        if (this.isFinished)
-            return {done: true};
-
-        let step;
-
-        try {
-            step = await this.#inner[name](...args);
-        } catch (e) {
-            step = {done: true, error: e};
-        } finally {
-            if (step?.done || step?.error) {
-                this.#inner = null;
-            }
-
-            if (step?.error) {
-                this.#children.length = 0;
-            }
-        }
-
-        return step;
-    }
-
-    async next(...args) {
-        if (!this.#timeline.start) this.#timeline.start = Date.now();
-
-        if (this.#children.length) {
-            return await this.#nextChild(this.#children[0], ...args);
-        }
-
-        if (this.#inner) {
-            const step = await this.#it('next', ...args);
-            if (step?.error)
-                return this.#onFinish(step);
-
-            const child = this.addChild(step?.value);
-            if (!!child)
-                return {done: false, value: child};
-
-            // last instruction
-            if (step.done && !this.#children.length && !this.#inner)
-                return this.#onFinish(step);
-
-            return {...step, done: false};
-        }
-
-        return {done: true};
-    }
-
-    async throw(error) {
-        const step = this.#inner
-            ? await this.#it('throw', error)
-            : {done: true, error};
-
-        return step?.done ? this.#onFinish(step) : step;
-    }
-
-    //#endregion
-
-    //#region Promise
 
     async return(value) {
-        const step = await this.#it('return', value);
-        return step?.done
-            ? this.#onFinish(step)
-            : step;
-    }
+        const mark = this.timeline.current
 
-    then(resolve, reject) {
-        this.#run();
-        return this.#pwr.promise.then(resolve, reject);
-    }
-
-    catch(cb) {
-        return this.then(null, cb);
-    }
-
-    finally(cb) {
-        this.#run();
-        return this.#pwr.promise.finally(cb);
-    }
-
-    before(gen) {
-        const promise = this.addChild(gen);
-        if (promise) {
-            this.#run();
-        }
-        return promise;
-    }
-
-    //#endregion
-
-    /**
-     * Try to add task into working generator
-     * .
-     * @param value {SafeGenerator | Promise | Generator | AsyncGenerator | Iterable | AsyncIterable | Function | PromiseLike}
-     * @returns {SafeGenerator|*}
-     */
-    addChild(value) {
-        if (value instanceof SafeGenerator) {
-            this.#children.unshift(value);
-            return value;
+        switch (mark.name) {
+            case 'start':
+                this.timeline.next()
         }
 
-        if (isFunc(value?.[Symbol.asyncIterator])) {
-            const gen = value[Symbol.asyncIterator]();
-            return this.addChild(new SafeGenerator(gen));
-        }
+        switch (this.timeline.current) {
+            case 'start':
+                this.timeline
 
-        if (isFunc(value?.[Symbol.iterator])) {
-            const gen = value[Symbol.iterator]();
-            return this.addChild(new SafeGenerator(gen));
+            case 'run':
+            case 'end':
         }
+    }
 
-        if (isFunc(value?.then)) {
-            const p = value;
-            const gen = async function* promise2gen() {
-                return yield p;
-            }();
-            return this.addChild(new SafeGenerator(gen));
+    next(...args) {
+        if (this.visit('start') || this.inRun('main')) {
+
         }
     }
 }
 
-/**
- *
- * @param func {Function | AsyncFunction | GeneratorFunction | AsyncGeneratorFunction}
- * @param opts {}
- * @returns {function(...[*]): SafeGenerator}
- */
-export function e_gen(func, opts = {}) {
-    if (!(this instanceof e_gen)) return new e_gen(func, opts);
-
-    this.state = {
-        callbacks: {before: [], after: [], catch: [], finally: []},
-        calls: []
-    };
-
-    const _this = this;
-
-    return function e_gen(...args) {
-        const result = new SafeGenerator(null);
-        const api = {
-            before(cb) {
-                return result.addChild(cb)
-            },
-            finally(cb) {
-                return result.finally(cb);
-            },
-            then(resolve, reject) {
-                return result.then(resolve, reject);
-            },
-            catch(cb) {
-                return this.then(null, cb);
-            },
-
-            throw(e) {
-                return result.throw(e);
-            },
-            return(value) {
-                return result.return(value);
-            },
-        };
-        const thisArg = proxyThis(this, api);
-
-        for (let cb of _this.state.callbacks.before) {
-            api.before(cb.apply(thisArg, args));
-        }
-
-        _this.state.callbacks.after.forEach(x => api.then(x));
-        _this.state.callbacks.catch.forEach(x => api.catch(x));
-        _this.state.callbacks.finally.forEach(x => api.finally(x));
-
-        result.addChild(func.apply(thisArg, args));
-        return result;
-    };
-}
-
-e_gen.prototype.then = function (resolve, reject) {
-    isFunc(resolve) && (this.state.callbacks.after ||= []) && this.state.callbacks.after.push(resolve);
-    isFunc(reject) && (this.state.callbacks.catch ||= []) && this.state.callbacks.catch.push(reject);
-    return this;
-};
-e_gen.prototype.catch = function (cb) {
-    return this.then(null, cb);
-};
-e_gen.prototype.finally = function (cb) {
-    isFunc(cb) && (this.state.callbacks.finally ||= []) && this.state.callbacks.finally.push(cb);
-    return this;
-}
-e_gen.prototype.before = function (cb) {
-    isFunc(cb) && (this.state.callbacks.before ||= []) && this.state.callbacks.before.push(cb);
-    return this;
-}
-
-
-const run = e_gen(async function* () {
-    this.finally(() => {
-        console.log('finally');
-    });
-
-    this.catch(e => {
-        console.log('catch', e);
-    })
-
-    console.log('here');
-
-    throw new Error('error');
-
-    return 54
-});
-
-run().then(console.log);
+//
+//
+// /**
+//  * Safely iterate through provided generator
+//  */
+// class SafeRunGenerator extends Iterator {
+//     #state = {
+//         timeline: {
+//             start: null,
+//             end: null,
+//         },
+//         retVal: {},
+//         inner: null,
+//     };
+//
+//     constructor(obj) {
+//         super();
+//
+//         if (!isPrimitive(obj) && isFunc(obj?.[Symbol.iterator])) {
+//             this.#state.inner = obj[Symbol.iterator]();
+//         } else if (!isPrimitive(obj) && isFunc(obj?.[Symbol.asyncIterator])) {
+//             this.#state.inner = obj[Symbol.asyncIterator]();
+//         } else if (isFunc(obj?.then)) {
+//             this.#state.inner = async function* promise2gen() {
+//                 return yield obj;
+//             };
+//         } else if (isFunc(obj)) {
+//             this.#state.inner = async function* func2Gen() {
+//                 return obj();
+//             };
+//         } else {
+//             this.return(obj);
+//         }
+//     }
+//
+//     get isStarted() {
+//         return this.#state.timeline.start > 0;
+//     }
+//
+//     get isFinished() {
+//         return this.isStarted && this.#state.timeline.end > 0;
+//     }
+//
+//     get isRunning() {
+//         return this.isStarted && !this.isFinished;
+//     }
+//
+//     async next(...args) {
+//         if (this.isFinished) {
+//             return {...this.#state.retVal, done: true};
+//         }
+//
+//         let step;
+//         if (!this.isStarted) {
+//             this.#state.timeline.start = Date.now();
+//         }
+//
+//         if (this.isRunning) {
+//             try {
+//                 step = await this.#state.inner.next(...args);
+//             } catch (e) {
+//                 step = {done: true, error: e};
+//             }
+//         }
+//
+//         if (step?.done) {
+//             this.#state.timeline.end = Date.now();
+//             this.#state.retVal = {step};
+//             this.#state.inner = null;
+//         }
+//
+//         return step;
+//     }
+//
+//     async throw(e) {
+//         if (this.isFinished) {
+//             return this.#state.retVal;
+//         }
+//
+//         let step;
+//
+//         if (this.isRunning) {
+//             try {
+//                 step = await this.#state.inner.throw(e);
+//             } catch (e) {
+//                 step = {done: true, error: e};
+//             }
+//         }
+//
+//         if (!this.isStarted) {
+//             this.#state.timeline.start = Date.now();
+//             step = {error: e, done: true};
+//         }
+//
+//         if (step?.done) {
+//             this.#state.timeline.end = Date.now();
+//             this.#state.retVal = {...step};
+//             this.#state.inner = null;
+//         }
+//
+//         return step;
+//     }
+//
+//     async return(value) {
+//         if (this.isFinished) {
+//             return this.#state.retVal;
+//         }
+//
+//         let step;
+//
+//         if (this.isRunning) {
+//             try {
+//                 step = await this.#state.inner.return(value);
+//             } catch (e) {
+//                 step = {done: true, error: e};
+//             }
+//         }
+//
+//         if (!this.isStarted) {
+//             this.#state.timeline.start = Date.now();
+//             step = {value, done: true};
+//         }
+//
+//         if (step?.done) {
+//             this.#state.timeline.end = Date.now();
+//             this.#state.retVal = {...step};
+//             this.#state.inner = null;
+//         }
+//
+//         return step;
+//     }
+// }
+//
+// class ChainGenerator extends SafeRunGenerator {
+//     #state = {
+//         children: [],
+//         current: null,
+//         retVal: {},
+//         timeline: {
+//             start: null,
+//             end: null,
+//         },
+//     };
+//
+//     constructor() {
+//         super();
+//
+//         /**
+//          * Running children
+//          * @type {SafeRunGenerator[]}
+//          */
+//         this.children = [];
+//     }
+//
+//
+// }
+//
+// class SafeGenerator {
+//     constructor(generator) {
+//         this.#state.gens.inner = generator;
+//
+//         this.#state.stages = [];
+//     }
+//
+//     //#region Stata managing
+//
+//     #stage(name, priority) {
+//         const children = [];
+//         const timeline = {start: null, end: null};
+//
+//         return {
+//             get name() {
+//                 return name;
+//             },
+//             get priority() {
+//                 return priority;
+//             },
+//
+//
+//             get isStarted() {
+//                 return timeline.start > 0;
+//             },
+//             get isRunning() {
+//                 return this.isStarted && !this.isFinished;
+//             },
+//             get isFinished() {
+//                 return this.isStarted && timeline.end > 0;
+//             },
+//
+//             add(gen) {
+//                 children.push(gen);
+//                 return gen;
+//             },
+//             remove(gen) {
+//                 const index = children.indexOf(gen);
+//                 if (index !== -1) {
+//                     children.splice(index, 1);
+//                     return true;
+//                 }
+//             },
+//
+//
+//             next(...args) {
+//
+//             },
+//         };
+//     }
+//
+//     #setError(error, priority = 0) {
+//         if (this.#state.timeline.end > 0)
+//             return {skip: 'already finished'};
+//
+//         if (priority < this.#state.retVal.priority)
+//             return {skip: 'cannot override higher priority error'};
+//
+//         this.#state.retVal = {error, priority};
+//
+//         // remove regular handlers
+//         this.#state.gens.before.concat(this.#state.gens.after).forEach(x => this.removeChild(x));
+//
+//         // was not visited error yet
+//         if (!this.#state.timeline.err) {
+//             this.#state.timeline.err = Date.now();
+//         } else {
+//             // clear catch handlers if error occurred in catch stage
+//             this.#state.gens.catch.forEach(x => this.removeChild(x));
+//         }
+//
+//         return {
+//             done: this.#state.gens.catch.length || this.#state.gens.finally.length,
+//         };
+//     }
+//
+//     #setValue(value, priority = 0) {
+//         if (this.#state.timeline.end > 0)
+//             return {skip: 'already finished'};
+//
+//         this.addChild(value);
+//
+//         if (priority < this.#state.retVal.priority)
+//             return {skip: 'cannot override higher priority error'};
+//
+//         this.#state.retVal = {value, priority};
+//
+//         return {
+//             done: !(this.#state.gens.before.length
+//                 || this.#state.gens.inner
+//                 || this.#state.gens.after.length
+//                 || this.#state.gens.finally.length),
+//         };
+//     }
+//
+//     get #currentStage() {
+//         if (!this.#state.timeline.start) return 'not_started';
+//
+//         if (this.#state.timeline.start > 0
+//             && !this.hasError
+//             && this.#state.gens.before.length) {
+//             return 'before';
+//         }
+//
+//         if (this.#state.timeline.start > 0
+//             && !this.hasError
+//             && this.#state.gens.before.length) {
+//             return 'before';
+//         }
+//
+//     }
+//
+//     //#endregion Stata managing
+//
+//     //#region Private
+//
+//     #state = {
+//         timeline: {start: null, err: null, end: null,},
+//         retVal: {priority: Number.MIN_VALUE},
+//         gens: {
+//             before: [],
+//             after: [],
+//             catch: [],
+//             finally: [],
+//             inner: null,
+//         },
+//     };
+//
+//     get hasError() {
+//         return !!this.#state.retVal.error;
+//     }
+//
+//     get isFinished() {
+//         return this.#state.timeline.end > 0;
+//     }
+//
+//     get #nextGenerator() {
+//         const {gens, retVal, timeline} = this.#state;
+//
+//         // managing timeline dates
+//         if (!timeline.start) {
+//             timeline.start = Date.now();
+//         } else if (this.hasError && !timeline.err) {
+//             timeline.err = Date.now();
+//         }
+//
+//         if (this.hasError) {
+//             if (!timeline.err) {
+//                 timeline.err = Date.now();
+//             } else {
+//                 gens.catch.forEach(gen => this.removeChild(gen));
+//             }
+//         }
+//
+//         if (!this.hasError) {
+//             return gens.before.at(0)
+//                 || gens.inner
+//                 || ('value' in retVal && gens.after.at(0))
+//         }
+//     }
+//
+//
+//     async #onGenerationFinished({error, value} = {}) {
+//         // wash finisehd already
+//         if (this.#timeline.end)
+//             return {done: true};
+//
+//         this.#timeline.end = Date.now();
+//         this.#inner = this.#children.length = 0;
+//
+//         try {
+//             return {done: true, error, value};
+//         } finally {
+//             if (error)
+//                 this.#pwr.reject(error);
+//             else
+//                 this.#pwr.resolve(value);
+//         }
+//     }
+//
+//     async #nextChild(child, ...args) {
+//         let step;
+//
+//         try {
+//             step = await child.next(...args);
+//         } catch (e) {
+//             step = {done: true, error: e};
+//         } finally {
+//             if (step.done) {
+//                 const i = this.#children.indexOf(child);
+//                 if (i !== -1)
+//                     this.#children.splice(i, 1);
+//             }
+//         }
+//
+//         // failed
+//         if (step.done && step.error)
+//             return await this.throw(step.error, true);
+//
+//         // finished as last gen instruction
+//         if (step.done && !step.error && !this.#children.length && !this.#inner) {
+//             return this.#onGenerationFinished(step);
+//         }
+//
+//         // returning child result
+//         return {...step, done: false};
+//     }
+//
+//     //#endregion
+//
+//     //#region Iterator
+//
+//     #nextGenerator() {
+//         // no error, not finished, has any high priority children
+//         if (!this.#state.retVal.error && this.#innerGenerators.children.length && !this.#state.timeline.end) {
+//             return [this.#innerGenerators.children[0], 'before'];
+//         }
+//
+//         // no error, main generator exists and hasn't run yet
+//         if (!this.#state.retVal.error && this.#innerGenerators.inner) {
+//             return [this.#innerGenerators.inner, 'main'];
+//         }
+//
+//         // no error, main was run and has return value, run after handlers
+//         if (!this.#state.retVal.error && this.#innerGenerators.after.length && 'value' in this.#state.retVal) {
+//             return [this.#innerGenerators.after[0], 'after'];
+//         }
+//
+//         // error occurred, can call catch handlers
+//         if (!!this.#state.retVal.error && this.#innerGenerators.catch.length) {
+//             return [this.#innerGenerators.catch[0], 'catch'];
+//         }
+//
+//         // finally handlers always run if available
+//         if (this.#innerGenerators.finally.length) {
+//             return [this.#innerGenerators.finally[0], 'finally'];
+//         }
+//
+//         // no more generators to run
+//         return null;
+//
+//     }
+//
+//     async #it(name, ...args) {
+//         const [gen, stage] = this.#nextGenerator() || [];
+//         if (!gen)
+//             return {done: true, ...this.#state.retVal};
+//
+//         let step;
+//         try {
+//             step = await gen[name](...args);
+//         } catch (e) {
+//             step = {done: true, error: e};
+//         }
+//
+//         // not finished yet - return step as is
+//         if (!step?.done)
+//             return step;
+//
+//         // handle completed generator based on stage
+//         if (this.#innerGenerators.inner === gen) {
+//             // main generator finished
+//             this.#innerGenerators.inner = null;
+//             if (step.error) {
+//                 this.#state.retVal = {error: step.error};
+//             } else {
+//                 this.#state.retVal = {value: step.value};
+//             }
+//         } else {
+//             // remove completed generator from appropriate array
+//             for (let arr of [this.#innerGenerators.children,
+//                 this.#innerGenerators.after,
+//                 this.#innerGenerators.catch,
+//                 this.#innerGenerators.finally]) {
+//
+//                 let index = arr.indexOf(gen);
+//                 if (index !== -1) {
+//                     arr.splice(index, 1);
+//                     break;
+//                 }
+//             }
+//
+//             // handle errors from catch stage
+//             if (step.error && stage === 'catch') {
+//                 this.#state.retVal = {error: step.error};
+//                 // clear remaining catch handlers as they couldn't handle the error
+//                 this.#innerGenerators.catch.length = 0;
+//             }
+//         }
+//
+//
+//         return step;
+//     }
+//
+//     async next(...args) {
+//         if (!this.#timeline.start) this.#timeline.start = Date.now();
+//
+//         if (this.#children.length) {
+//             return await this.#nextChild(this.#children[0], ...args);
+//         }
+//
+//         if (this.#inner) {
+//             const step = await this.#it('next', ...args);
+//             if (step?.error)
+//                 return this.#onGenerationFinished(step);
+//
+//             const child = this.addChild(step?.value);
+//             if (!!child)
+//                 return {done: false, value: child};
+//
+//             // last instruction
+//             if (step.done && !this.#children.length && !this.#inner)
+//                 return this.#onGenerationFinished(step);
+//
+//             return {...step, done: false};
+//         }
+//
+//         return {done: true};
+//     }
+//
+//     async throw(error) {
+//         const step = this.#inner
+//             ? await this.#it('throw', error)
+//             : {done: true, error};
+//
+//         return step?.done ? this.#onGenerationFinished(step) : step;
+//     }
+//
+//     //#endregion
+//
+//     //#region Promise
+//
+//     async return(value) {
+//         const step = await this.#it('return', value);
+//         return step?.done
+//             ? this.#onGenerationFinished(step)
+//             : step;
+//     }
+//
+//     then(resolve, reject) {
+//         const pwr = Promise.withResolvers();
+//         if (isFunc(resolve)) {
+//             const state = this.#state;
+//             const gen = new SafeGenerator(async function* onThan() {
+//                 try {
+//                     return yield resolve(state.retVal.value);
+//                 } finally {
+//                     pwr.resolve(state.retVal?.value);
+//                 }
+//             });
+//             this.#innerGenerators.after.push(gen);
+//         }
+//
+//         if (isFunc(reject)) {
+//             const state = this.#state;
+//             const gen = new SafeGenerator(async function* onCatch() {
+//                 try {
+//                     return yield resolve(state.retVal.error);
+//                 } finally {
+//                     pwr.resolve(state.retVal?.error);
+//                 }
+//             });
+//             this.#innerGenerators.catch.push(gen);
+//         }
+//
+//         return pwr.promise;
+//     }
+//
+//     catch(cb) {
+//         return this.then(null, cb);
+//     }
+//
+//     finally(cb) {
+//         if (isFunc(cb)) {
+//             const gen = new SafeGenerator(async function* onThan() {
+//                 return yield cb();
+//             });
+//             this.#innerGenerators.finally.push(gen);
+//             return gen;
+//         }
+//     }
+//
+//     before(gen) {
+//         return this.addChild(gen);
+//     }
+//
+//     //#endregion
+//
+//     /**
+//      * Try to add task into working generator
+//      * .
+//      * @param value {SafeGenerator | Promise | Generator | AsyncGenerator | Iterable | AsyncIterable | Function | PromiseLike}
+//      * @returns {SafeGenerator|*}
+//      */
+//     addChild(value) {
+//         if (value instanceof SafeGenerator) {
+//             this.#innerGenerators.children.push(value);
+//             return value.wait();
+//         }
+//
+//         if (!isPrimitive(value) && isFunc(value?.[Symbol.asyncIterator])) {
+//             const gen = value[Symbol.asyncIterator]();
+//             return this.addChild(new SafeGenerator(gen));
+//         }
+//
+//         if (!isPrimitive(value) && isFunc(value?.[Symbol.iterator])) {
+//             const gen = value[Symbol.iterator]();
+//             return this.addChild(new SafeGenerator(gen));
+//         }
+//
+//         if (isFunc(value?.then)) {
+//             const p = value;
+//             const gen = async function* promise2gen() {
+//                 return yield p;
+//             }();
+//             return this.addChild(new SafeGenerator(gen));
+//         }
+//
+//         if (isFunc(value)) {
+//             return this.addChild(new SafeGenerator(function* func2Gen() {
+//                 return value();
+//             }()));
+//         }
+//     }
+//
+//     removeChild(gen) {
+//         if (gen) {
+//             'before after catch finally'.split(' ').forEach(prop => {
+//                 const arr = this.#state.gens[prop];
+//                 let index = arr?.indexOf?.(gen);
+//                 if (index !== -1) {
+//                     arr.splice(index, 1);
+//                     return prop;
+//                 }
+//             });
+//         }
+//     }
+//
+//     async wait() {
+//         let step;
+//
+//         while (!this.isFinished) {
+//             step = await this.next(step?.value)
+//         }
+//
+//         return step?.value;
+//     }
+// }
+//
+// /**
+//  *
+//  * @param func {Function | AsyncFunction | GeneratorFunction | AsyncGeneratorFunction}
+//  * @param opts {}
+//  * @returns {function(...[*]): SafeGenerator}
+//  */
+// export default function e_gen(func, opts = {}) {
+//     const state = {
+//         callbacks: {before: [], after: [], catch: [], finally: []},
+//         calls: []
+//     };
+//
+//     const result = function e_gen(...args) {
+//         const result = new SafeGenerator(null);
+//         const api = {
+//             before(cb) {
+//                 return result.addChild(cb)
+//             },
+//             finally(cb) {
+//                 return result.finally(cb);
+//             },
+//             then(resolve, reject) {
+//                 return result.then(resolve, reject);
+//             },
+//             catch(cb) {
+//                 return this.then(null, cb);
+//             },
+//
+//             throw(e) {
+//                 return result.throw(e);
+//             },
+//             return(value) {
+//                 return result.return(value);
+//             },
+//         };
+//         const thisArg = proxyThis(this, api);
+//
+//         for (let cb of state.callbacks.before) {
+//             api.before(cb.apply(thisArg, args));
+//         }
+//         state.callbacks.after.forEach(x => api.then(x));
+//         state.callbacks.catch.forEach(x => api.catch(x));
+//         state.callbacks.finally.forEach(x => api.finally(x));
+//
+//         result.addChild(() => func.apply(thisArg, args));
+//         return result;
+//     };
+//
+//     const addCb = arr => function addCallback(cb) {
+//         return isFunc(cb) && arr.push(cb) && this;
+//     };
+//
+//     result.after = addCb(state.callbacks.after);
+//     result.catch = addCb(state.callbacks.catch);
+//     result.finally = addCb(state.callbacks.finally);
+//     result.before = addCb(state.callbacks.before);
+//
+//     return result;
+// }
+//

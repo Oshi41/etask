@@ -483,24 +483,3 @@ export class Runner extends Iterator {
         return this;
     }
 }
-
-function egen(fn, opts) {
-    if (!(this instanceof egen)) return new egen(fn, opts);
-
-    this._state = {};
-    return new function (...args) {
-
-    }
-}
-
-const s = new RunState();
-
-s.addCallback('before', () => console.log('before'));
-s.addCallback('after', () => console.log('after'));
-s.addCallback('error', () => console.log('error'));
-s.addCallback('finally', () => console.log('finally'));
-
-
-for (let step of s) {
-    console.log(step);
-}
