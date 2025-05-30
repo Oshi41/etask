@@ -1,90 +1,103 @@
-import {assert, isAsyncIterator, isFunc, isIterator} from './global.mjs'
+import {isAsyncIterable, isAsyncIterator, isFunc, isIterable, isIterator, isPromiseLike} from "./types.mjs";
 
-const functions = {
-    async: async function () {
-    },
-    gen: function* () {
-    },
-    asyncGen: async function* () {
-    },
-};
+/**
+ * Convert various input types to generators
+ * @param obj
+ * @returns {AsyncGenerator}
+ */
+export const any2asyncGen = function (obj) {
+    if (isAsyncIterator(obj)) return obj[Symbol.asyncIterator]();
 
-for (let [key, value] of Object.entries(functions)) {
-    functions[key] = {
-        constructor: value.constructor,
-        prototype: Object.getPrototypeOf(value),
-    };
+    if (isIterator(obj)) return obj[Symbol.iterator]();
+
+    if (isAsyncIterable(obj)) return async function* asyncIterable2gen() {
+        let result;
+
+        for await (let step of obj) {
+            yield step;
+            result = step;
+        }
+
+        return result;
+    }();
+
+    if (isIterable(obj)) return async function* iterable2gen() {
+        let result;
+
+        for (let step of obj) {
+            yield step;
+            result = step;
+        }
+
+        return result;
+    }();
+
+    if (isPromiseLike(obj)) return async function* promise2gen() {
+        return yield obj;
+    }();
+
+    if (isFunc(obj)) return async function* func2Gen() {
+        return yield obj();
+    }();
 }
 
 /**
- * Checks if the given function is an asynchronous function or an asynchronous generator function.
  *
- * @param {Function} fn - The function to be checked.
- * @return {boolean} Returns true if the function is an asynchronous function or an asynchronous generator function, otherwise false.
+ * @param gen {AsyncGenerator}
+ * @yield {{done, value, error}}
  */
-export function isAsyncFunction(fn) {
-    return isFunc(fn) && fn?.constructor === functions.async.constructor || fn?.constructor === functions.asyncGen.constructor;
-}
-
-/**
- * Determines if the provided function is a generator function or an async generator function.
- *
- * @param {Function} fn - The function to check.
- * @return {boolean} Returns true if the provided function is a generator function or an async generator function, otherwise false.
- */
-export function IsGenFunction(fn) {
-    return isFunc(fn) && fn?.constructor === functions.gen.constructor || fn?.constructor === functions.asyncGen.constructor;
-}
-
-/**
- *
- * @param fn {Function}
- * @returns {AsyncGeneratorFunction}
- */
-export function toAsyncGen(fn) {
-    assert(isFunc(fn), 'fn must be a function')
-
-    // already async generator
-    if (IsGenFunction(fn) && isAsyncFunction(fn)) return fn;
-
-    if (IsGenFunction(fn)) return async function* asyncGen(...args) {
-        return yield* fn.apply(this, args);
-    };
-
-    return async function* asyncGen(...args) {
-        const res = fn.apply(this, args);
-        yield res;
-        return res;
-    };
-}
-
-/**
- * Wraps an iterator or async iterator, safely advancing it and yielding each step,
- * ensuring any encountered errors are handled and yielded as part of the output.
- *
- * @param {Iterator|AsyncIterator} gen - The generator, iterator, or async iterator to yield from.
- *                                       It must implement the appropriate `next` method or iterator interface.
- * @return {AsyncGenerator<{done?: boolean, error?: Error}, {value?: any, done?: boolean, error?: Error}>}
- *         An async generator that yields each step of the input iterator or async iterator,
- *         and properly includes any errors encountered during the iteration process.
- */
-export async function* safeYield(gen) {
-    const iter = isIterator(gen) && gen[Symbol.iterator]?.()
-        || isAsyncIterator(gen) && gen[Symbol.asyncIterator]?.();
-
-    let step = {};
-
-    if (!iter) {
-        step = {error: new Error('gen should implement iterator interface'), done: true};
-    }
+export async function* safe(gen) {
+    let step;
 
     while (!step?.done) {
         try {
             step = await gen.next(step?.value);
         } catch (e) {
-            step = {error: e, done: true};
+            step = {done: true, error: e};
         }
-        yield step;
+
+        if (step?.error || !step?.done)
+            yield step;
+    }
+}
+
+/**
+ *
+ * @param gen {AsyncGenerator}
+ * @yield {{done, value, error}}
+ */
+export async function* recursive(gen) {
+    let step;
+
+    for await (step of gen) {
+        if (step.error) {
+            return step;
+        }
+
+        const inner = any2asyncGen(step?.value);
+        if (inner) {
+            yield* recursive(safe(inner));
+            continue;
+        }
+
+        if (!step?.done)
+            yield step;
+    }
+
+    return step;
+}
+
+/**
+ *
+ * @param gen {AsyncGenerator}
+ * @returns {Promise<*|{done}>}
+ */
+export async function promisify(gen) {
+    let step;
+
+    for await (step of gen) {
+        if (step?.done)
+            return step;
     }
 
     return step;

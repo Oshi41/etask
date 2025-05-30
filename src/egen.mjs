@@ -1,6 +1,6 @@
-import {isFunc} from "./utils/global.mjs";
 import {safeYield, toAsyncGen} from "./utils/gen.mjs";
 import {proxyThis} from "./utils/proxy.mjs";
+import {isFunc} from "./utils/types.mjs";
 
 /**
  * @typedef {'start' | 'before' | 'main' | 'after' | 'error' | 'finally' | 'cleanup'} PhaseType

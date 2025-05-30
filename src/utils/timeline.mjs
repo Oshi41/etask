@@ -90,7 +90,7 @@ export class Timeline {
 
             timestamp() {
                 return state.owner.#timestamps.get(name);
-            }
+            },
         };
 
         // Store reference for internal access
@@ -108,12 +108,6 @@ export class Timeline {
         this.#marks.set(name, mark);
         this.#sequence.push(name);
 
-        // Set first mark as current if none set
-        if (!this.#current) {
-            this.#current = name;
-            this.#timestamps.set(name, Date.now());
-        }
-
         return mark;
     }
 
@@ -126,11 +120,19 @@ export class Timeline {
             if (this.#sequence.includes(this.#current))
                 return this.#sequence.indexOf(this.#current) + 1;
 
+            if (!this.#timestamps.size)
+                return 0;
+
             return -1;
         })();
 
-        if (nextIndex === -1 || nextIndex >= this.#sequence.length) {
-            return null;
+        // not found
+        if (nextIndex === -1 || nextIndex > this.#sequence.length)
+            return;
+
+        // reached the end
+        if (nextIndex === this.#sequence.length && this.#sequence.length) {
+            return this.#current = null;
         }
 
         // Find next mark with passing guards
@@ -151,7 +153,7 @@ export class Timeline {
 
     // Iterator support for usage pattern 1
     * [Symbol.iterator]() {
-        let current = this.current;
+        let current = this.current || this.next();
         while (current) {
             yield current;
             current = this.next();

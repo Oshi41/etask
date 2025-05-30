@@ -1,4 +1,5 @@
-import {assert, isFunc} from "./global.mjs";
+import {assert} from "./global.mjs";
+import {isFunc} from "./types.mjs";
 
 export const once = (func) => {
     assert(isFunc(func), 'func must be a function');

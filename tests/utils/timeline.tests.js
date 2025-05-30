@@ -13,6 +13,7 @@ describe('Timeline', () => {
             const mark1 = timeline.mark('start');
             const mark2 = timeline.mark('end');
 
+            timeline.next();
             assert.strictEqual(timeline.current.name, 'start');
             assert.strictEqual(timeline.current, mark1);
             assert.ok(timeline.current.timestamp() > 0);
@@ -31,16 +32,19 @@ describe('Timeline', () => {
             timeline.mark('middle');
             timeline.mark('end');
 
-            const next = timeline.next();
-            assert.strictEqual(timeline.current.name, 'middle');
-            assert.strictEqual(next.name, 'middle');
-            assert.ok(timeline.current.timestamp() > 0);
+            for (let step of ['start', 'middle', 'end']) {
+                const next = timeline.next();
+                assert.strictEqual(timeline.current.name, step);
+                assert.strictEqual(next.name, step);
+                assert.ok(timeline.current.timestamp() > 0);
+            }
         });
 
         it('should return null when no more marks available', () => {
             timeline.mark('start');
             timeline.mark('end');
 
+            timeline.next(); // move to 'start'
             timeline.next(); // move to 'end'
             const result = timeline.next(); // try to move beyond end
 
@@ -57,6 +61,7 @@ describe('Timeline', () => {
             timeline.mark('conditional').if(() => condition);
             timeline.mark('end');
 
+            timeline.next(); // to 'start'
             const next = timeline.next();
             assert.strictEqual(timeline.current.name, 'end');
             assert.strictEqual(next.name, 'end');
@@ -69,6 +74,7 @@ describe('Timeline', () => {
             timeline.mark('conditional').if(() => condition);
             timeline.mark('end');
 
+            timeline.next(); // to 'start'
             const next = timeline.next();
             assert.strictEqual(timeline.current.name, 'conditional');
             assert.strictEqual(next.name, 'conditional');
@@ -84,6 +90,7 @@ describe('Timeline', () => {
                 .if(() => condition2);
             timeline.mark('end');
 
+            timeline.next(); // to 'start'
             const next = timeline.next();
             assert.strictEqual(timeline.current.name, 'end');
         });
@@ -95,6 +102,7 @@ describe('Timeline', () => {
             });
             timeline.mark('end');
 
+            timeline.next(); // to 'start'
             const next = timeline.next();
             assert.strictEqual(timeline.current.name, 'end');
         });
@@ -128,6 +136,7 @@ describe('Timeline', () => {
                 .mark('error')
                 .transitionIf('error', () => shouldTransition);
 
+            timeline.next(); // to 'start'
             const result = timeline.next();
 
             assert.strictEqual(timeline.current.name, 'middle');
@@ -176,6 +185,7 @@ describe('Timeline', () => {
                 .transitionIf('nonexistent', () => true)
                 .mark('end')
 
+            timeline.next(); // to 'start'
             const result = timeline.next();
             assert.strictEqual(timeline.current.name, 'end');
         });
@@ -249,13 +259,12 @@ describe('Timeline', () => {
                 .transitionIf('jumped', () => shouldJump)
                 .mark('end');
 
-            shouldJump = true;
+
             const visited = [];
             for (let mark of timeline) {
                 visited.push(mark.name);
 
-                if (visited.length > 3)
-                    shouldJump = false;
+                shouldJump = visited.length > 0 && visited.length < 4;
             }
 
             assert.deepStrictEqual(visited, ['start', 'jumped', 'jumped', 'jumped', 'end']);
@@ -268,6 +277,8 @@ describe('Timeline', () => {
 
             timeline.mark('start');
             timeline.mark('end');
+
+            timeline.next(); // to 'start'
 
             const timestamp = timeline.mark('start').timestamp();
             assert.ok(timestamp >= startTime);
@@ -305,6 +316,7 @@ describe('Timeline', () => {
                 .transitionIf('error', () => hasError)
 
             // Normal flow first
+            timeline.next(); //  -> start
             timeline.next(); // start -> process
             assert.strictEqual(timeline.current.name, 'process');
 
@@ -333,6 +345,7 @@ describe('Timeline', () => {
                 .transitionIf('error-path', () => mode === 'error');
 
             // Test normal path
+            timeline.next(); // to start
             timeline.next();
             assert.strictEqual(timeline.current.name, 'normal-path');
 
@@ -380,6 +393,7 @@ describe('Timeline', () => {
         it('should handle timeline with only one mark', () => {
             timeline.mark('only');
 
+            timeline.next(); // to start
             const result = timeline.next();
             assert.strictEqual(result, null);
             assert.strictEqual(timeline.current.name, 'only');
@@ -390,6 +404,7 @@ describe('Timeline', () => {
             timeline.mark('failing1').if(() => false);
             timeline.mark('failing2').if(() => false);
 
+            timeline.next(); // to start
             const result = timeline.next();
             assert.strictEqual(result, null);
             assert.strictEqual(timeline.current.name, 'start');
@@ -399,9 +414,10 @@ describe('Timeline', () => {
             timeline
                 .mark('start')
                 .mark('loop')
-                .transitionIf('start', () => timeline.current.name === 'loop')
+                .transitionIf('start', () => timeline.current?.name === 'loop')
                 .mark('end');
 
+            timeline.next(); // to start
             timeline.next(); // start -> loop
             assert.strictEqual(timeline.current.name, 'loop');
 

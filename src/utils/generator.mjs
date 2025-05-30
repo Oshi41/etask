@@ -1,54 +1,371 @@
-import {isFunc, isPrimitive} from "./global.mjs";
-import {installTimeline} from './timeline.mjs';
+import {Timeline} from './timeline.mjs';
+import {isAsyncIterable, isAsyncIterator, isFunc, isIterable, isIterator, isPromiseLike} from './types.mjs';
 
+/**
+ * Convert various input types to generators
+ * @param obj
+ * @returns {AsyncGenerator}
+ */
+const any2asyncGen = function (obj) {
+    if (isAsyncIterator(obj)) return obj[Symbol.asyncIterator]();
 
-class SafeRunGenerator extends Iterator {
-    #state = {};
+    if (isIterator(obj)) return obj[Symbol.iterator]();
+
+    if (isAsyncIterable(obj)) return async function* asyncIterable2gen() {
+        let result;
+
+        for await (let step of obj) {
+            yield step;
+            result = step;
+        }
+
+        return result;
+    }();
+
+    if (isIterable(obj)) return async function* iterable2gen() {
+        let result;
+
+        for (let step of obj) {
+            yield step;
+            result = step;
+        }
+
+        return result;
+    }();
+
+    if (isPromiseLike(obj)) return async function* promise2gen() {
+        return yield obj;
+    }();
+
+    if (isFunc(obj)) return async function* func2Gen() {
+        return yield obj();
+    }();
+}
+
+/**
+ * Simple Safe Generator - never throws, returns errors in step objects
+ * @yields {{done, value, error}}
+ */
+export class SafeGenerator {
+    #state = {
+        inner: null,
+        retVal: {},
+        timeline: new Timeline(),
+        finished: false
+    };
 
     constructor(obj) {
-        super();
+        this.#state.inner = any2asyncGen(obj);
 
-        installTimeline(this)
-            .with('start')
-            .with('run', 'error')
-            .with('end');
-
-        this.#state.inner = !isPrimitive(obj) && isFunc(obj?.[Symbol.iterator]) && obj[Symbol.iterator]()
-            || !isPrimitive(obj) && isFunc(obj?.[Symbol.asyncIterator]) && obj[Symbol.asyncIterator]()
-            || isFunc(obj?.then) && async function* promise2gen() {
-                return yield obj;
-            }
-            || isFunc(obj) && async function* func2Gen() {
-                return obj();
-            };
-
-        if (!this.#state.inner)
-            this.return(obj);
+        this.#state.timeline
+            .mark('start')
+            .mark('run')
+            .mark('end');
     }
 
-    async return(value) {
-        const mark = this.timeline.current
+    get state() {
+        if (!this.#state.timeline.mark('start').timestamp())
+            return 'not_started';
 
-        switch (mark.name) {
-            case 'start':
-                this.timeline.next()
-        }
+        if (!this.#state.timeline.current)
+            return 'stopped';
 
-        switch (this.timeline.current) {
+        switch (this.#state.timeline.current.name) {
             case 'start':
-                this.timeline
+                return 'started';
 
             case 'run':
+                return 'running';
+
             case 'end':
+                return 'finished';
         }
     }
 
-    next(...args) {
-        if (this.visit('start') || this.inRun('main')) {
+    get _retVal() {
+        return this.#state.retVal;
+    }
 
+    get _gen() {
+        return this.#state.inner;
+    }
+
+    _nextState() {
+        this.#state.timeline.next();
+    }
+
+    async _run_fn(name, ...args) {
+        switch (this.state) {
+            case 'not_started':
+            case 'started':
+                this._nextState();
+                return this._run_fn(name, ...args);
+
+            case 'running':
+                let step;
+                try {
+                    step = await this.#state.inner[name](...args);
+                } catch (error) {
+                    // Convert exception to error step
+                    step = {done: true, error};
+                }
+
+                if (step?.done) {
+                    this.#state.retVal = step;
+                    this._nextState();
+                }
+
+                return step;
+
+            case 'finished':
+                this.#state.inner = null;
+                this._nextState();
+                return this._run_fn(name, ...args);
+
+            case 'stopped':
+                return this.#state.retVal || {done: true};
         }
+    }
+
+    /**
+     * Safe next() - never throws, returns error in step
+     */
+    async next(...args) {
+        return await this._run_fn('next', ...args);
+    }
+
+    /**
+     * Safe throw() - never throws, returns error in step
+     */
+    async throw(error) {
+        return await this._run_fn('throw', error);
+    }
+
+    /**
+     * Safe return() - never throws, returns error in step
+     */
+    async return(value) {
+        return await this._run_fn('return', value);
+    }
+
+    /**
+     * Iterator protocol support
+     */
+    [Symbol.asyncIterator]() {
+        return this;
+    }
+
+    async* map(fn) {
+        let index = -1;
+        let step;
+
+        while (!step?.done) {
+
+            if (!step?.done) {
+                step = await this.next(step?.value);
+                index++;
+            }
+
+            if (!step?.done) {
+                const mapped = await fn(step, index);
+
+                if (mapped?.error)
+                    throw mapped.error;
+
+                yield mapped?.value;
+            }
+        }
+    }
+
+    async* filter(fn) {
+        const iterator = this[Symbol.asyncIterator]();
+        let step;
+        let i = -1;
+
+        while (!step?.done) {
+            step = await iterator.next(step?.value);
+            i++;
+
+            if (await fn(step, i)) {
+                yield step.value;
+            }
+        }
+
+        if (step?.error)
+            throw step.error;
     }
 }
+
+/**
+ * A class that extends SafeGenerator to provide functionality for resolving promises
+ * based on the generator's execution flow. It supports chaining through `.then`, `.catch`,
+ * and `.finally` like standard Promises.
+ *
+ * The `PromiseGenerator` class is designed to work with generator functions and ensures
+ * that their execution can be awaited like a regular promise, providing seamless integration
+ * for asynchronous workflows.
+ *
+ * Features:
+ * - Automatically resolves or rejects the internal promise based on the generator's output.
+ * - Supports chaining methods including `then`, `catch`, and `finally` to manage the promise state.
+ * - Handles generator termination and resolves or rejects appropriately.
+ *
+ * Inherits:
+ * - `SafeGenerator`: The parent class responsible for managing the generator's iteration state.
+ *
+ * Methods:
+ * - `_run_fn`: Handles execution of generator methods such as `next`, `throw`, and `return`.
+ *   This method ensures the internal promise is resolved or rejected based on generator execution.
+ * - `then`: Allows chaining of actions after the promise resolves. Returns a new promise.
+ * - `catch`: Handles errors by setting a rejection callback. Returns a new promise.
+ * - `finally`: Adds a finalization callback that runs regardless of the resolution or rejection.
+ */
+export class PromiseGenerator extends SafeGenerator {
+    #pwr = Promise.withResolvers();
+    #running = false;
+
+    constructor(gen) {
+        super(gen);
+    }
+
+    async _run_fn(name, ...args) {
+        if (this.state == 'finished') {
+            return super._run_fn(name, ...args)
+                .finally(() => {
+                    if (this._retVal?.error)
+                        this.#pwr.reject(this._retVal?.error);
+                    else
+                        this.#pwr.resolve(this._retVal?.value);
+                });
+        }
+
+        return await super._run_fn(name, ...args);
+    }
+
+    #wait() {
+        if (!this.#running) {
+            this.#running = new Promise(async resolve => {
+                try {
+                    let step;
+                    while (!step?.done) {
+                        step = await this.next(step?.value);
+                    }
+                } finally {
+                    resolve(this.state);
+                }
+            });
+        }
+
+        return this.#pwr.promise;
+    }
+
+    then(resolve, reject) {
+        return this.#wait().then(resolve, reject);
+    }
+
+    catch(cb) {
+        return this.then(null, cb);
+    }
+
+    finally(cb) {
+        return this.#wait().finally(cb);
+    }
+}
+
+export class RecursiveGenerator extends PromiseGenerator {
+    /**
+     * @type {RecursiveGenerator[]}
+     */
+    #children = [];
+
+    constructor(gen) {
+        super(gen);
+    }
+
+    get childrenCount() {
+        return this.#children.length;
+    }
+
+    addChild(child) {
+        child = any2asyncGen(child);
+        if (!child) return;
+
+        child = new RecursiveGenerator(child);
+        child.finally(() => this.removeChild(child))
+
+        this.#children.push(child);
+        return child;
+    }
+
+    removeChild(child) {
+        const index = this.#children.indexOf(child);
+        if (index !== -1) {
+            this.#children.splice(index, 1);
+            return true;
+        }
+    }
+
+    async _run_fn(name, ...args) {
+        if (this.state == 'running' && this.#children.length) {
+            const step = await this.#children[0][name](...args);
+
+            if (step?.error)
+                return this.throw(step.error);
+
+            if (step?.done && !this.#children.length && !this._gen)
+                return this.return(step.value);
+
+            return {...step, done: false};
+        }
+
+        return await super._run_fn(name, ...args);
+    }
+}
+
+
+//
+// class SafeRunGenerator extends Iterator {
+//     #state = {};
+//
+//     constructor(obj) {
+//         super();
+//
+//         this.#state.inner = !isPrimitive(obj) && isFunc(obj?.[Symbol.iterator]) && obj[Symbol.iterator]()
+//             || !isPrimitive(obj) && isFunc(obj?.[Symbol.asyncIterator]) && obj[Symbol.asyncIterator]()
+//             || isFunc(obj?.then) && async function* promise2gen() {
+//                 return yield obj;
+//             }
+//             || isFunc(obj) && async function* func2Gen() {
+//                 return obj();
+//             };
+//
+//         if (!this.#state.inner)
+//             this.return(obj);
+//     }
+//
+//     async return(value) {
+//         const mark = this.timeline.current
+//
+//         switch (mark.name) {
+//             case 'start':
+//                 this.timeline.next()
+//         }
+//
+//         switch (this.timeline.current) {
+//             case 'start':
+//                 this.timeline
+//
+//             case 'run':
+//             case 'end':
+//         }
+//     }
+//
+//     next(...args) {
+//         if (this.visit('start') || this.inRun('main')) {
+//
+//         }
+//     }
+// }
 
 //
 //
