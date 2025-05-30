@@ -1,6 +1,7 @@
-import {assert, isFunc, isPrimitive, tryDispose} from "./global.mjs";
-import {safeYield, toAsyncGen} from "./gen.mjs";
+import {assert, tryDispose} from "./global.mjs";
 import {LinkedList} from "../list.mjs";
+import {isFunc, isPrimitive} from "./types.mjs";
+import {wrap} from "./promise.mjs";
 
 /**
  * Represents the state of an asynchronous event.
@@ -324,15 +325,13 @@ class AsyncEventStore {
      *   - Yields execution events and states including errors, timing, and the resulting object.
      *   - Throws information regarding any errors encountered while processing.
      */
-    async* handle(state) {
+    async handle(state) {
         for (let {value: sub} of this.#subscriptions) {
             if (state.wasStopped) break;
 
-            yield sub;
-
             // already disposed
             if (!sub.callback) {
-                yield sub.discard();
+                await sub.discard();
                 continue;
             }
 
@@ -345,28 +344,26 @@ class AsyncEventStore {
                 sub: sub,
                 store: this,
             };
+
             state.visited.push(visited);
-            yield visited;
 
-            try {
+            await wrap(async function* () {
+                this.finally(async () => {
+                    visited.end = Date.now();
+                    sub.calls++;
+
+                    if (sub.maxCalls > 0 && sub.calls >= sub.maxCalls) {
+                        await sub.discard();
+                    }
+                });
+                this.catch(async (e) => {
+                    visited.error = e;
+                    throw e;
+                });
+
                 visited.start = Date.now();
-                const func = toAsyncGen(sub.callback);
-                const funcCall = func.call(this, new AsyncEvent(state, sub, visited));
-                const safeGen = safeYield(funcCall);
-                for await (let step of safeGen) {
-                    yield step;
-                }
-            } catch (e) {
-                visited.error = e;
-                throw visited;
-            } finally {
-                visited.end = Date.now();
-                sub.calls++;
-
-                if (sub.maxCalls > 0 && sub.calls >= sub.maxCalls) {
-                    sub.discard();
-                }
-            }
+                return await sub.callback.call(this, new AsyncEvent(state, sub, visited));
+            });
         }
     }
 
@@ -432,11 +429,11 @@ export class AsyncEventTarget {
      * @param {Object} [opts] - Additional options to be passed to the event state.
      * @return {AsyncGenerator} An asynchronous generator yielding the results of the event handling process, followed by the final state.
      */
-    async* rise(type, payload, opts) {
+    async rise(type, payload, opts) {
         const store = this.#stores.get(type);
         if (store) {
             const state = new AsyncEventState(type, payload, opts);
-            yield* store.handle(state);
+            await store.handle(state);
             return state;
         }
     }

@@ -1,4 +1,4 @@
-import {isArray, isFunc, isPrimitive} from './global.mjs';
+import {isArray, isFunc, isPrimitive} from "./types.mjs";
 
 /**
  * Creates a replacer function that can be used with JSON.stringify to handle cyclic references.

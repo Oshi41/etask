@@ -1,4 +1,4 @@
-import {isPrimitive} from "./global.mjs";
+import {isPrimitive} from "./types.mjs";
 
 /**
  * Validates and normalizes a path string or array used for deep object navigation.
@@ -195,8 +195,7 @@ Object.forEachRecursive = function (root, {deep = 10, strategy = 'deep'} = {}) {
 
         const nextLevel = [];
 
-        for (let step of values[Symbol.iterator]()
-            .map(([value, prop]) => visit(value, prop))
+        for (let step of values[Symbol.iterator]().map(([value, prop]) => visit(value, prop))
             .filter(x => !x.fail)) {
 
             yield step.ret;

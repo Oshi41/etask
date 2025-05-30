@@ -1,6 +1,5 @@
 import {strict as assert} from 'assert';
-import {AsyncEventTarget} from '../../src/utils/events.js';
-import {isFunc} from "../../src/utils/global.mjs";
+import {AsyncEventTarget, isFunc} from '../../src/index.mjs';
 
 describe('AsyncEventTarget', () => {
     it('should add a callback to a type and return true', () => {

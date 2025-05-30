@@ -1,41 +1,4 @@
-const refTypes = new Set(['function', 'object']);
-
-/**
- * Determines whether the provided object is a function.
- *
- * @param {any} obj - The object to check.
- * @return {boolean} Returns true if the object is a function, otherwise false.
- */
-export function isFunc(obj) {
-    if (!obj) return false;
-
-    return typeof obj === 'function'
-        || obj instanceof Function
-        || [obj?.apply, obj?.call].every(x => isFunc(x));
-}
-
-/**
- * Determines whether the provided value is a plain JavaScript object.
- *
- * A plain object is typically an object created using object literals
- * or the Object constructor, and not an instance of a custom class or derived objects.
- *
- * @param {any} o The value to be checked.
- * @return {boolean} Returns `true` if the value is a plain object; otherwise, returns `false`.
- */
-export function isPlainObject(o) {
-    return o != null && typeof o === 'object' && !isFunc(o) && !isArray(o);
-}
-
-/**
- * Determines if a given value is of a primitive data type.
- *
- * @param {any} o - The value to check.
- * @return {boolean} - Returns true if the value is a primitive type, false otherwise.
- */
-export function isPrimitive(o) {
-    return !o || !refTypes.has(typeof o);
-}
+import {isFunc} from "./types.mjs";
 
 export function tryDispose(obj) {
     const func = obj?.[Symbol.dispose] || obj?.[Symbol.disposeAsync];
@@ -43,90 +6,6 @@ export function tryDispose(obj) {
         func.call(obj);
         return true;
     }
-}
-
-/**
- * Checks if a given object is disposable.
- * An object is considered disposable if it is not a primitive,
- * contains a property with the symbol `Symbol.dispose`,
- * and the value of this property is a function.
- *
- * @param {any} o - The object to check for disposability.
- * @return {boolean} Returns true if the object is disposable, otherwise false.
- */
-export function isDisposable(o) {
-    const prop = Symbol.dispose;
-    return !isPrimitive(o) && prop in o && isFunc(o[prop]);
-}
-
-/**
- * Determines if the given object is an iterator.
- *
- * @param {any} o The object to be checked.
- * @return {boolean} True if the object is an iterator; otherwise, false.
- */
-export function isIterator(o) {
-    const prop = Symbol.iterator;
-    return !isPrimitive(o) && prop in o && isFunc(o[prop]);
-}
-
-/**
- * Checks if the provided object is an asynchronous iterator.
- *
- * @param {any} o The object to test if it is an asynchronous iterator.
- * @return {boolean} Returns true if the object is an asynchronous iterator, false otherwise.
- */
-export function isAsyncIterator(o) {
-    const prop = Symbol.asyncIterator;
-    return !isPrimitive(o) && prop in o && isFunc(o[prop]);
-}
-
-/**
- * Determines whether the given function is a generator function.
- *
- * @param {Function} func - The function to be checked.
- * @return {boolean} Returns true if the provided function is a generator function, otherwise false.
- */
-export function isGeneratorFunction(func) {
-    return isFunc(func) && (function* () {
-    }).constructor === func.constructor;
-}
-
-/**
- * Determines if the provided function is an async generator function.
- *
- * @param {Function} func The function to test.
- * @return {boolean} Returns `true` if the function is an async generator function, otherwise `false`.
- */
-export function isAsyncGeneratorFunction(func) {
-    return isFunc(func) && (async function* () {
-    }).constructor === func.constructor;
-}
-
-/**
- * Determines whether a given function is an async function.
- *
- * @param {Function} func - The function to evaluate.
- * @return {boolean} Returns `true` if the input is an async function, otherwise `false`.
- */
-export function isAsyncFunction(func) {
-    return isFunc(func) && (async function () {
-    }).constructor === func.constructor;
-}
-
-/**
- * Determines if the given object is an asynchronous disposable object.
- *
- * This method checks if the object is non-primitive, has a property
- * associated with the Symbol.dispose symbol, and that the property
- * is a function.
- *
- * @param {any} o - The object to be checked for asynchronous disposal capability.
- * @return {boolean} Returns true if the object satisfies the conditions for being asynchronously disposable, otherwise false.
- */
-export function isAsyncDisposable(o) {
-    const prop = Symbol.dispose;
-    return !isPrimitive(o) && prop in o && isFunc(o[prop]);
 }
 
 /**
@@ -163,16 +42,6 @@ export function stackLocation(skip = 0) {
         Error.prepareStackTrace = prepare;
         Error.stackTraceLimit = limit;
     }
-}
-
-/**
- * Checks if the provided value is an array.
- *
- * @param {*} o - The value to check.
- * @return {boolean} True if the value is an array, otherwise false.
- */
-export function isArray(o) {
-    return Array.isArray(o);
 }
 
 /**
